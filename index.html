@@ -491,12 +491,12 @@
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             }
 
-            if (!lampY) lampY = yOffset + CONFIG.signal.poleHeight / 2;
+            if (!lampY) lampY = y + yOffset + CONFIG.signal.poleHeight / 2;
             labelX = poleX + (labelSide === 'right' ? CONFIG.label.signalOffset : -CONFIG.label.signalOffset);
-            labelY = (position === 'between-AC-AB' ? lampY : yOffset + CONFIG.signal.poleHeight / 2) + CONFIG.label.signalYOffset;
+            labelY = (position === 'between-AC-AB' ? lampY : y + yOffset + CONFIG.signal.poleHeight / 2) + CONFIG.label.signalYOffset;
 
             // Pole
-            drawLine(poleX, yOffset, poleX, yOffset + CONFIG.signal.poleHeight, {
+            drawLine(poleX, y + yOffset, poleX, y + yOffset + CONFIG.signal.poleHeight, {
                 stroke: defaultColor(), 'stroke-width': CONFIG.signal.poleWidth
             });
 
