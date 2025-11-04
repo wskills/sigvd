@@ -1,0 +1,1722 @@
+<script>
+        // ╔══════════════════════════════════════════════════════════════╗
+        // ║                 RAILWAY TRACK VISUALIZATION                 ║
+        // ║          REFACTORED WITH SIMULATED INTERLOCKING           ║
+        // ╚══════════════════════════════════════════════════════════════╝
+
+        // ════════════════════════════════════════════════════════════════
+        // 1. CONFIGURATION & CONSTANTS
+        // ════════════════════════════════════════════════════════════════
+        const CONFIG = {
+            // (Your configuration remains unchanged)
+            SVG_WIDTH: 1440,
+            SVG_HEIGHT: 350,
+            TRACK_WIDTH: 10,
+            STANDARD_WIDTH: 193,
+            EXTENDED_WIDTH: 244,
+            SHORTENED_WIDTH: 161,
+            START_X: 50,
+            UPPER_Y: 150,
+            LOWER_Y: 250,
+            LABEL_OFFSET_Y: 30,
+            TRIANGLE_SIZE: 12,
+            TRIANGLE_GAP: 8,
+            VERTICAL_LINE_WIDTH: 8,
+            GAP_LINE_HEIGHT: 18,
+            SIGNAL_RADIUS: 8,
+            POLE_WIDTH: 4,
+            POLE_HEIGHT: 40,
+            HOOD_WIDTH: 20,
+            HOOD_HEIGHT: 15
+        };
+
+        const COLORS = {
+            OFF: '#ff00ff',
+            WHITE: '#ffffff',
+            GREEN: '#00ff00',
+            RED: '#ff0000',
+            YELLOW: '#ffff00',
+            BLACK: '#000000'
+        };
+
+        // ════════════════════════════════════════════════════════════════
+        // 2. STATE MANAGEMENT (THE "MASTER STATE" ON THE SERVER)
+        // ════════════════════════════════════════════════════════════════
+        const state = {
+            power: 'on',
+            mode: 'vdu',
+            tracks: {
+                VA: 'white', VB: 'white', VC_LEFT: 'white', VC_11A: 'white', VC_RIGHT: 'white', VD: 'white',
+                AD: 'white', AC: 'white', AB_LEFT: 'white', AB_11B: 'white', AB_RIGHT: 'white', AA: 'white',
+                DIAG: 'white'
+            },
+            signals: {
+                N4: 'red', // --- MODIFIED --- Default to red (STOP)
+                T7: 'red', // --- MODIFIED --- Default to red (STOP)
+                S6: 'red', // --- MODIFIED --- Default to red (STOP)
+                T5: 'red', // --- MODIFIED --- Default to red (STOP)
+                T3: 'red'  // --- MODIFIED --- Default to red (STOP)
+            },
+            hoods: {
+                T5: 'empty', T3: 'empty', S6: 'empty'
+            },
+            switches: {
+                '11A': 'NORMAL', '11B': 'NORMAL'
+            },
+            switchStates: {
+                '11A': 'OK', '11B': 'OK'
+            }
+        };
+
+        // --- MODIFIED ---
+        // This object now only manages the VDU's *selection* state.
+        // The master routeLog is now part of the Interlocking.
+        const vduUiState = {
+            selectedTriangle: null,
+            routeLog: []
+        };
+
+        // ════════════════════════════════════════════════════════════════
+        // 2B. MOCK INTERLOCKING LOGIC (THE "BACKEND" / "PLC")
+        // ════════════════════════════════════════════════════════════════
+        // --- NEW ---
+        // This object simulates the PLC/Interlocking. It holds all the
+        // safety logic and is the *only* thing that can change the master 'state'.
+        const Interlocking = {
+            
+            // --- Definitions of all possible routes and their requirements ---
+            routeDefinitions: {
+                // --- Main Routes ---
+                'N4-Utara Direction|T3-Utara Direction': {
+                    tracks: ['VB', 'VC_LEFT'],
+                    switches: [{ id: '11A', pos: 'NORMAL' }],
+                    signal: { id: 'N4', aspect: 'green' }
+                },
+                'T3-Selatan Direction|N4-Selatan Direction': {
+                    tracks: ['VC_LEFT', 'VB'],
+                    switches: [{ id: '11A', pos: 'NORMAL' }],
+                    signal: { id: 'T3', aspect: 'green' }
+                },
+                'T5-Selatan Direction|T7-Selatan Direction': {
+                    tracks: ['AC', 'AB_LEFT'],
+                    switches: [{ id: '11B', pos: 'NORMAL' }],
+                    signal: { id: 'T5', aspect: 'green' }
+                },
+                // --- Crossover Route ---
+                'T3-Selatan Direction|T7-Selatan Direction': {
+                    tracks: ['VC_LEFT', 'DIAG', 'AB_LEFT', 'AC'],
+                    switches: [
+                        { id: '11A', pos: 'REVERSE' },
+                        { id: '11B', pos: 'REVERSE' }
+                    ],
+                    signal: { id: 'T3', aspect: 'green' } // Would be a shunt aspect in reality
+                },
+                
+                // --- Shunt Routes ---
+                'S6|T5': {
+                    tracks: ['AB_LEFT'],
+                    switches: [{ id: '11B', pos: 'NORMAL' }],
+                    signal: { id: 'S6', aspect: 'green' }
+                },
+                'S6|T3': {
+                    tracks: ['DIAG', 'VC_LEFT'],
+                    switches: [
+                        { id: '11A', pos: 'REVERSE' },
+                        { id: '11B', pos: 'REVERSE' }
+                    ],
+                    signal: { id: 'S6', aspect: 'green' }
+                },
+                'T5|S6': {
+                    tracks: ['AB_LEFT'],
+                    switches: [{ id: '11B', pos: 'NORMAL' }],
+                    signal: { id: 'T5', aspect: 'green' }
+                },
+                'T3|S6': {
+                    tracks: ['VC_LEFT', 'DIAG'],
+                    switches: [
+                        { id: '11A', pos: 'REVERSE' },
+                        { id: '11B', pos: 'REVERSE' }
+                    ],
+                    signal: { id: 'T3', aspect: 'green' }
+                }
+                // (Add other routes like T7->T5, etc.)
+            },
+            
+            invalidRouteMessages: {
+                'N4-Selatan Direction|T3-Selatan Direction': 'wrong sequence',
+                'T3-Utara Direction|N4-Utara Direction': 'wrong sequence',
+                'T5-Utara Direction|T7-Utara Direction': 'no Utara triangle',
+                // (Your other messages)
+            },
+
+            // --- "BACKEND" FUNCTIONS ---
+
+            // This is the main function called by the VDU
+            requestRoute: function(from, to) {
+                // 1. Check for basic connection validity
+                const validation = this.validateRouteRequest(from, to);
+                if (!validation.isValid) {
+                    this.log(from.signalName, from.direction, to.signalName, to.direction, false, validation.error);
+                    return;
+                }
+
+                const routeKey = validation.routeKey;
+                const route = this.routeDefinitions[routeKey];
+
+                // 2. Perform Safety Checks
+                const safetyChecks = this.runSafetyChecks(route);
+                if (!safetyChecks.isSafe) {
+                    this.log(from.signalName, from.direction, to.signalName, to.direction, false, safetyChecks.error);
+                    return;
+                }
+
+                // 3. All checks passed! Execute the route.
+                this.executeRoute(route);
+                
+                // 4. Log success
+                this.log(from.signalName, from.direction, to.signalName, to.direction, true);
+            },
+
+            validateRouteRequest: function(from, to) {
+                if (from.isShunt && !to.isShunt) {
+                    return { isValid: false, error: 'Cannot connect shunt route to main route' };
+                }
+                if (!from.isShunt && to.isShunt) {
+                    return { isValid: false, error: 'Cannot connect main route to shunt route' };
+                }
+                
+                let routeKey;
+                let validConnections;
+
+                if (from.isShunt) {
+                    // Shunt route (e.g., "S6" -> "T5")
+                    routeKey = `${from.signalName}|${to.signalName}`;
+                    validConnections = { 'S6': ['T5', 'T3'], 'T5': ['S6'], 'T3': ['S6'] };
+                    if (!validConnections[from.signalName] || !validConnections[from.signalName].includes(to.signalName)) {
+                         return { isValid: false, error: `Shunt route ${from.signalName} cannot connect to ${to.signalName}` };
+                    }
+                } else {
+                    // Main route (e.g., "N4-Utara Direction" -> "T3-Utara Direction")
+                    routeKey = `${from.signalName}-${from.direction}|${to.signalName}-${to.direction}`;
+                    validConnections = {
+                        'N4-Utara Direction': ['T3-Utara Direction'],
+                        'T3-Selatan Direction': ['N4-Selatan Direction', 'T7-Selatan Direction'],
+                        'T5-Selatan Direction': ['T7-Selatan Direction'],
+                    };
+                    
+                    if (!validConnections[from.direction] || !validConnections[from.direction].includes(to.direction)) {
+                        const error = this.invalidRouteMessages[routeKey] || 'invalid route';
+                        return { isValid: false, error: error };
+                    }
+                }
+                
+                if (!this.routeDefinitions[routeKey]) {
+                    return { isValid: false, error: `Route definition for ${routeKey} not found.` };
+                }
+                
+                return { isValid: true, routeKey: routeKey };
+            },
+
+            runSafetyChecks: function(route) {
+                // Check 1: Are all tracks in the route 'white' (unoccupied)?
+                for (const trackId of route.tracks) {
+                    if (state.tracks[trackId] !== 'white') {
+                        return { isSafe: false, error: `Track ${trackId} is occupied.` };
+                    }
+                }
+
+                // Check 2: Are all switches in the correct position?
+                for (const sw of route.switches) {
+                    if (state.switches[sw.id] !== sw.pos) {
+                        return { isSafe: false, error: `Switch ${sw.id} is not ${sw.pos}.` };
+                    }
+                }
+                
+                // Check 3: Are all switches 'OK'?
+                for (const sw of route.switches) {
+                    if (state.switchStates[sw.id] === 'broken') {
+                         return { isSafe: false, error: `Switch ${sw.id} is broken.` };
+                    }
+                }
+                
+                // (Add more checks here... e.g., conflicting routes)
+
+                return { isSafe: true };
+            },
+            
+            executeRoute: function(route) {
+                // 1. Lock the tracks (set to red)
+                for (const trackId of route.tracks) {
+                    // In a real app, you'd have a 'locked' (blue) state,
+                    // but for simulation, 'red' shows occupancy.
+                    state.tracks[trackId] = 'red';
+                }
+                
+                // 2. Set the signal to 'green'
+                state.signals[route.signal.id] = route.signal.aspect;
+                
+                // (In a real system, you'd also lock the switches)
+                
+                // 3. Re-render the VDU with the new state
+                render();
+            },
+
+            // This is the new master logging function
+            log: function(fromSignal, fromDirection, toSignal, toDirection, isValid = true, errorMessage = '') {
+                let routeString;
+                if (isValid) {
+                    routeString = `Route set: ${fromSignal} ${fromDirection} --> ${toSignal} ${toDirection}`;
+                } else {
+                    routeString = `Invalid route: ${fromSignal} ${fromDirection} --> ${toSignal} ${toDirection} (${errorMessage})`;
+                }
+                
+                vduUiState.routeLog.push(routeString);
+                console.log(routeString);
+                
+                // Display in page route log
+                const logContainer = document.getElementById('routeLog');
+                if (logContainer) {
+                    const logEntry = document.createElement('div');
+                    logEntry.textContent = routeString;
+                    if (isValid) {
+                        logEntry.style.color = '#00ff00';  // Green for valid
+                    } else {
+                        logEntry.style.color = '#ff0000';  // Red for invalid
+                    }
+                    logEntry.style.fontFamily = 'monospace';
+                    logEntry.style.padding = '5px';
+                    logContainer.appendChild(logEntry);
+                    logContainer.scrollTop = logContainer.scrollHeight; // Auto scroll to bottom
+                }
+            }
+        };
+
+
+        // ════════════════════════════════════════════════════════════════
+        // 3. COLOR & UTILITY FUNCTIONS
+        // ════════════════════════════════════════════════════════════════
+        
+        // (These functions remain unchanged)
+        
+        function getColor(trackState) {
+            if (state.power === 'off') return COLORS.OFF;
+            const colorMap = {
+                'green': COLORS.GREEN, 'red': COLORS.RED, 'yellow': COLORS.YELLOW,
+                'white': COLORS.WHITE, 'magenta': COLORS.OFF
+            };
+            return colorMap[trackState] || COLORS.OFF;
+        }
+
+        function getSignalColor(signalState) {
+            if (state.power === 'off') return 'none';
+            const colorMap = {
+                'green': COLORS.GREEN, 'red': COLORS.RED, 'yellow': COLORS.YELLOW,
+                'white': COLORS.WHITE
+            };
+            return colorMap[signalState] || 'none';
+        }
+
+        function getDefaultColor() {
+            return state.power === 'off' ? COLORS.OFF : COLORS.WHITE;
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 4. EVENT HANDLERS (THE "FRONTEND" / "VDU CLIENT")
+        // ════════════════════════════════════════════════════════════════
+
+        // --- MODIFIED ---
+        // This function now only *requests* a route from the Interlocking.
+        // It does NOT contain any logic itself.
+        function handleTriangleClick(signalName, direction) {
+            if (state.power === 'off') {
+                console.log('Cannot set routes - system power is OFF');
+                return;
+            }
+
+            if (!vduUiState.selectedTriangle) {
+                // 1. First click: Store selection locally
+                vduUiState.selectedTriangle = { signalName, direction, isShunt: false };
+                console.log(`Route origin selected: ${signalName} ${direction}`);
+            } else {
+                // 2. Second click: Send request to Interlocking
+                const from = vduUiState.selectedTriangle;
+                const to = { signalName, direction, isShunt: false };
+                
+                Interlocking.requestRoute(from, to);
+                
+                // 3. Clear local selection
+                vduUiState.selectedTriangle = null;
+            }
+        }
+
+        // --- MODIFIED ---
+        // This function also only *requests* a route.
+        function handleShuntRouteClick(signalName, routeType) {
+            if (state.power === 'off') {
+                console.log('Cannot set shunt routes - system power is OFF');
+                return;
+            }
+
+            if (!vduUiState.selectedTriangle) {
+                // 1. First click: Store selection locally
+                vduUiState.selectedTriangle = { signalName, direction: routeType, isShunt: true };
+                console.log(`Shunt route origin selected: ${signalName} ${routeType}`);
+            } else {
+                // 2. Second click: Send request to Interlocking
+                const from = vduUiState.selectedTriangle;
+                const to = { signalName, direction: routeType, isShunt: true };
+
+                Interlocking.requestRoute(from, to);
+                
+                // 3. Clear local selection
+                vduUiState.selectedTriangle = null;
+            }
+        }
+
+
+        // --- MODIFIED ---
+        // These global functions are now just for testing/overriding the state.
+        // In a real app, only the Interlocking would change these.
+        function togglePower() {
+            state.power = state.power === 'on' ? 'off' : 'on';
+            updatePowerUI();
+            render();
+        }
+
+        function setMode(newMode) {
+            if (state.power === 'off') return;
+            state.mode = newMode;
+            updateModeUI();
+            render();
+        }
+
+        function updatePowerUI() {
+            const powerBtn = document.getElementById('powerBtn');
+            const statusDiv = document.getElementById('systemStatus');
+            
+            if (state.power === 'on') {
+                powerBtn.textContent = 'ON';
+                powerBtn.className = 'power-button on';
+                statusDiv.textContent = `SYSTEM: READY (${state.mode.toUpperCase()})`;
+                statusDiv.className = 'system-status';
+            } else {
+                powerBtn.textContent = 'OFF';
+                powerBtn.className = 'power-button off';
+                statusDiv.textContent = 'SYSTEM: OFFLINE';
+                statusDiv.className = 'system-status off';
+            }
+        }
+
+        function updateModeUI() {
+            const vduBtn = document.getElementById('vduBtn');
+            const dominoBtn = document.getElementById('dominoBtn');
+            
+            if (state.mode === 'vdu') {
+                vduBtn.className = 'active';
+                dominoBtn.className = 'inactive';
+            } else {
+                vduBtn.className = 'inactive';
+                dominoBtn.className = 'active';
+            }
+            updatePowerUI();
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 5. STATE MODIFICATION FUNCTIONS (MANUAL OVERRIDES)
+        // ════════════════════════════════════════════════════════════════
+        
+        // (These functions remain unchanged - they are your "manual override" controls)
+
+        function cycleState(trackName) {
+            if (state.power === 'off') return; 
+            
+            // --- NEW --- Reset signals if track is manually changed
+            // In a real system, changing a track to 'white' would 'drop' (cancel) the route.
+            if (state.tracks[trackName] === 'red') {
+                state.signals.N4 = 'red';
+                state.signals.T3 = 'red';
+                state.signals.T5 = 'red';
+                state.signals.T7 = 'red';
+                state.signals.S6 = 'red';
+            }
+
+            if (state.tracks[trackName] === 'magenta') state.tracks[trackName] = 'white';
+            else if (state.tracks[trackName] === 'white') state.tracks[trackName] = 'green';
+            else if (state.tracks[trackName] === 'green') state.tracks[trackName] = 'red';
+            else state.tracks[trackName] = 'magenta';
+            
+            if (trackName === 'VC_LEFT' && state.switches['11A'] === 'NORMAL') {
+                state.tracks['VC_RIGHT'] = state.tracks['VC_LEFT'];
+                state.tracks['VC_11A'] = state.tracks['VC_LEFT'];
+            }
+            if (trackName === 'AB_LEFT' && state.switches['11B'] === 'NORMAL') {
+                state.tracks['AB_RIGHT'] = state.tracks['AB_LEFT'];
+                state.tracks['AB_11B'] = state.tracks['AB_LEFT'];
+            }
+            
+            render();
+        }
+
+        function cycleSignal(signalName) {
+            if (state.power === 'off') return;
+            if (state.signals[signalName] === 'off' || state.signals[signalName] === 'magenta') state.signals[signalName] = 'green';
+            else if (state.signals[signalName] === 'green') state.signals[signalName] = 'red';
+            else if (state.signals[signalName] === 'red') state.signals[signalName] = 'broken';
+            else state.signals[signalName] = 'off';
+            render();
+        }
+
+        function cycleSignalT5() {
+            if (state.power === 'off') return;
+            if (state.signals.T5 === 'off' || state.signals.T5 === 'magenta') state.signals.T5 = 'green';
+            else if (state.signals.T5 === 'green') state.signals.T5 = 'red';
+            else if (state.signals.T5 === 'red') state.signals.T5 = 'broken';
+            else state.signals.T5 = 'off';
+            render();
+        }
+
+        function cycleSignalT3() {
+            if (state.power === 'off') return;
+            if (state.signals.T3 === 'off' || state.signals.T3 === 'magenta') state.signals.T3 = 'green';
+            else if (state.signals.T3 === 'green') state.signals.T3 = 'red';
+            else if (state.signals.T3 === 'red') state.signals.T3 = 'broken';
+            else state.signals.T3 = 'off';
+            render();
+        }
+
+        function cycleSignalS6() {
+            if (state.power === 'off') return;
+            if (state.signals.S6 === 'off' || state.signals.S6 === 'magenta') state.signals.S6 = 'green';
+            else if (state.signals.S6 === 'green') state.signals.S6 = 'red';
+            else if (state.signals.S6 === 'red') state.signals.S6 = 'broken';
+            else state.signals.S6 = 'off';
+            render();
+        }
+
+        function toggleSwitch(switchName) {
+            if (state.power === 'off') return;
+            state.switches[switchName] = state.switches[switchName] === 'NORMAL' ? 'REVERSE' : 'NORMAL';
+            render();
+        }
+
+        function toggleSwitchState(switchName) {
+            if (state.power === 'off') return;
+            state.switchStates[switchName] = state.switchStates[switchName] === 'OK' ? 'broken' : 'OK';
+            render();
+        }
+
+        function toggleHood(hoodName) {
+            if (state.power === 'off') return;
+            state.hoods[hoodName] = state.hoods[hoodName] === 'empty' ? 'filled' : 'empty';
+            render();
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 6. SVG DRAWING & RENDERING FUNCTIONS
+        // ════════════════════════════════════════════════════════════════
+        
+        // (Your 'drawTrack' function remains unchanged)
+        function drawTrack() {
+            const svg = document.getElementById('trackSvg');
+            svg.innerHTML = '';
+            // (All your existing SVG drawing code goes here...)
+            // ...
+            // (Your existing SVG drawing code ends here)
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 7. CONTROL PANEL UI BUILDER
+        // ════════════════════════════════════════════════════════════════
+        
+        // (Your 'updateControls' function remains unchanged)
+        function updateControls() {
+            const container = document.getElementById('trackControls');
+            container.innerHTML = '';
+            // (All your existing control-building code goes here...)
+            // ...
+            // (Your existing control-building code ends here)
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 8. MAIN RENDER & INITIALIZATION
+        // ════════════════════════════════════════════════════════════════
+        
+        // (Your 'render' and 'initializeEventListeners' functions remain unchanged)
+        function render() {
+            drawTrack();
+            updateControls();
+            
+            const controlsDiv = document.querySelector('.controls');
+            if (state.power === 'off') {
+                controlsDiv.classList.add('disabled');
+            } else {
+                controlsDiv.classList.remove('disabled');
+            }
+        }
+
+        function initializeEventListeners() {
+            const powerBtn = document.getElementById('powerBtn');
+            const vduBtn = document.getElementById('vduBtn');
+            const dominoBtn = document.getElementById('dominoBtn');
+            
+            powerBtn.addEventListener('click', togglePower);
+            vduBtn.addEventListener('click', () => setMode('vdu'));
+            dominoBtn.addEventListener('click', () => setMode('domino'));
+        }
+
+        // --- NEW ---
+        // Need to add the drawTrack and updateControls functions
+        // back in since they were part of the original file.
+        // (Copy/paste your original functions here)
+        
+        // (Your full drawTrack() function)
+        function drawTrack() {
+            const svg = document.getElementById('trackSvg');
+            svg.innerHTML = '';
+
+            const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bg.setAttribute('width', '1440');
+            bg.setAttribute('height', '350');
+            bg.setAttribute('fill', '#000000');
+            svg.appendChild(bg);
+
+            const upperY = 100, lowerY = 250;
+            const standardWidth = 193, extendedWidth = 331;
+            
+            const totalTrackWidth = standardWidth + 40 + standardWidth + 8 + (extendedWidth + 40) + 40 + standardWidth;
+            const startX = (1440 - totalTrackWidth) / 2;
+
+            function drawSection(x1, x2, y, trackName) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', getColor(state.tracks[trackName]));
+                line.setAttribute('stroke-width', '10');
+                line.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(line);
+            }
+
+            function drawLabel(x, y, text) {
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', x);
+                label.setAttribute('y', y);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('font-size', '14');
+                label.setAttribute('font-weight', 'bold');
+                label.setAttribute('fill', getDefaultColor());
+                label.textContent = text;
+                svg.appendChild(label);
+            }
+
+            // ===== UPPER LINE =====
+            let x = startX;
+            const vaWidth = standardWidth - 32;
+            drawSection(x, x + vaWidth, upperY, 'VA');
+            drawLabel(x + vaWidth / 2, upperY - 30, 'VA');
+            const vaEnd = x + vaWidth;
+            const vaVb_triangle1_x = vaEnd + 12;
+            const vaVb_triangle2_x = vaEnd + 24 + 8 + 12;
+            const vbStart = vaEnd + 24 + 8 + 24;
+            x = vbStart;
+            drawSection(x, x + standardWidth, upperY, 'VB');
+            drawLabel(x + standardWidth / 2, upperY - 30, 'VB');
+            const vbEnd = x + standardWidth;
+            x += standardWidth + 8;
+            const vcStart = x;
+            const vc11A_start = vcStart + extendedWidth * 0.75;
+            const vc11A_end = vc11A_start + 40;
+            const vcLeft_end = vc11A_start + 10;
+            const vcRight_start = vc11A_end - 10;
+            const vcRight_end = vcStart + extendedWidth + 40;
+            if (state.switches['11A'] === 'NORMAL') {
+                drawSection(vcStart, vcRight_end, upperY, 'VC_LEFT');
+            } else {
+                drawSection(vcStart, vcLeft_end, upperY, 'VC_LEFT');
+                drawSection(vcRight_start, vcRight_end, upperY, 'VC_RIGHT');
+            }
+            drawLabel(vcStart + 60, upperY - 30, 'VC');
+            drawLabel(vc11A_start + 20, upperY - 30, '11A');
+            const vcRightSize = vcRight_end - vcRight_start;
+            const vcEnd = vcRight_end;
+            const vcVd_triangle2_x = vcEnd + 24 + 8 + 12;
+            const vdStart = vcVd_triangle2_x + 12;
+            const vdWidth = standardWidth - 32;
+            drawSection(vdStart, vdStart + vdWidth, upperY, 'VD');
+            drawLabel(vdStart + vdWidth / 2, upperY - 30, 'VD');
+
+            // ===== LOWER LINE =====
+            x = startX;
+            drawSection(x, x + standardWidth, lowerY, 'AD');
+            drawLabel(x + standardWidth / 2, lowerY + 30, 'AD');
+            const adEnd = x + standardWidth;
+            const acStart = adEnd + 24;
+            drawSection(acStart, vbEnd, lowerY, 'AC');
+            const acMidpoint = acStart + (vbEnd - acStart) / 2;
+            drawLabel(acMidpoint, lowerY + 30, 'AC');
+            const acEnd = vbEnd;
+            const abStart = vbEnd + 8;
+            const abLeft_end = abStart + vcRightSize + 1;
+            const ab11B_start = abLeft_end - 10;
+            const ab11B_end = ab11B_start + 40;
+            const abRight_start = ab11B_end - 10;
+            const abRight_end = abStart + extendedWidth + 40;
+            const abTriangleGapX_calc = vcEnd + 24;
+            if (state.switches['11B'] === 'NORMAL') {
+                drawSection(abStart, abTriangleGapX_calc, lowerY, 'AB_LEFT');
+            } else {
+                drawSection(abStart, abLeft_end, lowerY, 'AB_LEFT');
+                drawSection(abRight_start, abTriangleGapX_calc, lowerY, 'AB_RIGHT');
+            }
+            drawLabel(abRight_end - 60, lowerY + 30, 'AB');
+            drawLabel(ab11B_start + 20, lowerY + 30, '11B');
+            const abEnd = abTriangleGapX_calc;
+            const aaStart = vcVd_triangle2_x + 12;
+            const aaWidth = standardWidth - 32;
+            drawSection(aaStart, aaStart + aaWidth, lowerY, 'AA');
+            drawLabel(aaStart + aaWidth / 2, lowerY + 30, 'AA');
+            const aaEnd = aaStart + aaWidth;
+
+            // ===== VERTICAL LINES AT GAPS =====
+            const gapLineHeight = 18;
+            const lineWidth = 8;
+            const triangle1Triangle2GapX = vaEnd + 24;
+            const triangle1Triangle2LineY_top = upperY - gapLineHeight / 2;
+            const triangle1Triangle2LineY_bottom = upperY + gapLineHeight / 2;
+            const triangle1Triangle2Line = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            triangle1Triangle2Line.setAttribute('x', triangle1Triangle2GapX);
+            triangle1Triangle2Line.setAttribute('y', triangle1Triangle2LineY_top);
+            triangle1Triangle2Line.setAttribute('width', lineWidth);
+            triangle1Triangle2Line.setAttribute('height', gapLineHeight);
+            triangle1Triangle2Line.setAttribute('fill', getDefaultColor());
+            triangle1Triangle2Line.setAttribute('stroke', 'none');
+            svg.appendChild(triangle1Triangle2Line);
+            const vbVcGapX = vbEnd;
+            const vbVcLineY_top = upperY - gapLineHeight / 2;
+            const vbVcLineY_bottom = upperY + gapLineHeight / 2;
+            const vbVcLine = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            vbVcLine.setAttribute('x', vbVcGapX);
+            vbVcLine.setAttribute('y', vbVcLineY_top);
+            vbVcLine.setAttribute('width', lineWidth);
+            vbVcLine.setAttribute('height', gapLineHeight);
+            vbVcLine.setAttribute('fill', getDefaultColor());
+            vbVcLine.setAttribute('stroke', 'none');
+            svg.appendChild(vbVcLine);
+            const vcVdTriangle1Triangle2GapX = vcEnd + 24;
+            const vcVdTriangle1Triangle2LineY_top = upperY - gapLineHeight / 2;
+            const vcVdTriangle1Triangle2LineY_bottom = upperY + gapLineHeight / 2;
+            const vcVdTriangle1Triangle2Line = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            vcVdTriangle1Triangle2Line.setAttribute('x', vcVdTriangle1Triangle2GapX);
+            vcVdTriangle1Triangle2Line.setAttribute('y', vcVdTriangle1Triangle2LineY_top);
+            vcVdTriangle1Triangle2Line.setAttribute('width', lineWidth);
+            vcVdTriangle1Triangle2Line.setAttribute('height', gapLineHeight);
+            vcVdTriangle1Triangle2Line.setAttribute('fill', getDefaultColor());
+            vcVdTriangle1Triangle2Line.setAttribute('stroke', 'none');
+            svg.appendChild(vcVdTriangle1Triangle2Line);
+            const acAbGapX = vbEnd;
+            const acAbLineY_top = lowerY - gapLineHeight / 2;
+            const acAbLineY_bottom = lowerY + gapLineHeight / 2;
+            const acAbLine = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            acAbLine.setAttribute('x', acAbGapX);
+            acAbLine.setAttribute('y', acAbLineY_top);
+            acAbLine.setAttribute('width', lineWidth);
+            acAbLine.setAttribute('height', gapLineHeight);
+            acAbLine.setAttribute('fill', getDefaultColor());
+            acAbLine.setAttribute('stroke', 'none');
+            svg.appendChild(acAbLine);
+            const shuntRouteS6_startX = acAbGapX + lineWidth;
+            const shuntRouteS6_centerY = acAbLineY_top - 10;
+            const shuntRouteS6_size = 10;
+            const shuntRouteS6_horizontal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteS6_horizontal.setAttribute('x1', shuntRouteS6_startX);
+            shuntRouteS6_horizontal.setAttribute('y1', shuntRouteS6_centerY);
+            shuntRouteS6_horizontal.setAttribute('x2', shuntRouteS6_startX + shuntRouteS6_size);
+            shuntRouteS6_horizontal.setAttribute('y2', shuntRouteS6_centerY);
+            shuntRouteS6_horizontal.setAttribute('stroke', getDefaultColor());
+            shuntRouteS6_horizontal.setAttribute('stroke-width', '2');
+            shuntRouteS6_horizontal.setAttribute('stroke-linecap', 'round');
+            shuntRouteS6_horizontal.setAttribute('cursor', 'pointer');
+            shuntRouteS6_horizontal.setAttribute('data-signal', 'S6');
+            shuntRouteS6_horizontal.onclick = () => handleShuntRouteClick('S6', 'Shunt');
+            svg.appendChild(shuntRouteS6_horizontal);
+            const shuntRouteS6_diagonal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteS6_diagonal.setAttribute('x1', shuntRouteS6_startX + shuntRouteS6_size);
+            shuntRouteS6_diagonal.setAttribute('y1', shuntRouteS6_centerY);
+            shuntRouteS6_diagonal.setAttribute('x2', shuntRouteS6_startX + shuntRouteS6_size / 5);
+            shuntRouteS6_diagonal.setAttribute('y2', shuntRouteS6_centerY - shuntRouteS6_size * 0.8);
+            shuntRouteS6_diagonal.setAttribute('stroke', getDefaultColor());
+            shuntRouteS6_diagonal.setAttribute('stroke-width', '2');
+            shuntRouteS6_diagonal.setAttribute('stroke-linecap', 'round');
+            shuntRouteS6_diagonal.setAttribute('cursor', 'pointer');
+            shuntRouteS6_diagonal.setAttribute('data-signal', 'S6');
+            shuntRouteS6_diagonal.onclick = () => handleShuntRouteClick('S6', 'Shunt');
+            svg.appendChild(shuntRouteS6_diagonal);
+            const adTriangleGapX = triangle1Triangle2GapX;
+            const adTriangleLineY_top = lowerY - gapLineHeight / 2;
+            const adTriangleLineY_bottom = lowerY + gapLineHeight / 2;
+            const adTriangleLine = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            adTriangleLine.setAttribute('x', adTriangleGapX);
+            adTriangleLine.setAttribute('y', adTriangleLineY_top);
+            adTriangleLine.setAttribute('width', lineWidth);
+            adTriangleLine.setAttribute('height', gapLineHeight);
+            adTriangleLine.setAttribute('fill', getDefaultColor());
+            adTriangleLine.setAttribute('stroke', 'none');
+            svg.appendChild(adTriangleLine);
+            const abTriangleGapX = vcVdTriangle1Triangle2GapX;
+            const abTriangleLineY_top = lowerY - gapLineHeight / 2;
+            const abTriangleLineY_bottom = lowerY + gapLineHeight / 2;
+            const abTriangleLine = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            abTriangleLine.setAttribute('x', abTriangleGapX);
+            abTriangleLine.setAttribute('y', abTriangleLineY_top);
+            abTriangleLine.setAttribute('width', lineWidth);
+            abTriangleLine.setAttribute('height', gapLineHeight);
+            abTriangleLine.setAttribute('fill', getDefaultColor());
+            abTriangleLine.setAttribute('stroke', 'none');
+            svg.appendChild(abTriangleLine);
+            const shuntRouteT5_startX = abTriangleGapX;
+            const shuntRouteT5_centerY = abTriangleLineY_bottom + 10;
+            const shuntRouteT5_size = 10;
+            const shuntRouteT5_horizontal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteT5_horizontal.setAttribute('x1', shuntRouteT5_startX);
+            shuntRouteT5_horizontal.setAttribute('y1', shuntRouteT5_centerY);
+            shuntRouteT5_horizontal.setAttribute('x2', shuntRouteT5_startX - shuntRouteT5_size);
+            shuntRouteT5_horizontal.setAttribute('y2', shuntRouteT5_centerY);
+            shuntRouteT5_horizontal.setAttribute('stroke', getDefaultColor());
+            shuntRouteT5_horizontal.setAttribute('stroke-width', '2');
+            shuntRouteT5_horizontal.setAttribute('stroke-linecap', 'round');
+            shuntRouteT5_horizontal.setAttribute('cursor', 'pointer');
+            shuntRouteT5_horizontal.setAttribute('data-signal', 'T5');
+            shuntRouteT5_horizontal.onclick = () => handleShuntRouteClick('T5', 'Shunt');
+            svg.appendChild(shuntRouteT5_horizontal);
+            const shuntRouteT5_diagonal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteT5_diagonal.setAttribute('x1', shuntRouteT5_startX - shuntRouteT5_size);
+            shuntRouteT5_diagonal.setAttribute('y1', shuntRouteT5_centerY);
+            shuntRouteT5_diagonal.setAttribute('x2', shuntRouteT5_startX - shuntRouteT5_size / 5);
+            shuntRouteT5_diagonal.setAttribute('y2', shuntRouteT5_centerY + shuntRouteT5_size * 0.8);
+            shuntRouteT5_diagonal.setAttribute('stroke', getDefaultColor());
+            shuntRouteT5_diagonal.setAttribute('stroke-width', '2');
+            shuntRouteT5_diagonal.setAttribute('stroke-linecap', 'round');
+            shuntRouteT5_diagonal.setAttribute('cursor', 'pointer');
+            shuntRouteT5_diagonal.setAttribute('data-signal', 'T5');
+            shuntRouteT5_diagonal.onclick = () => handleShuntRouteClick('T5', 'Shunt');
+            svg.appendChild(shuntRouteT5_diagonal);
+
+            // ===== TRIANGLES =====
+            const vcVdTriangleY = upperY;
+            const vcVd_triangle_size = 12;
+            const vcVd_triangle1_x = vcEnd + 12;
+            const triangle_vc_vd_utara = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle_vc_vd_utara.setAttribute('points', `${vcVd_triangle1_x - vcVd_triangle_size},${vcVdTriangleY - vcVd_triangle_size} ${vcVd_triangle1_x - vcVd_triangle_size},${vcVdTriangleY + vcVd_triangle_size} ${vcVd_triangle1_x + vcVd_triangle_size},${vcVdTriangleY}`);
+            triangle_vc_vd_utara.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle_vc_vd_utara.setAttribute('stroke', getDefaultColor());
+            triangle_vc_vd_utara.setAttribute('stroke-width', '2');
+            triangle_vc_vd_utara.setAttribute('cursor', 'pointer');
+            triangle_vc_vd_utara.onclick = () => handleTriangleClick('T3', 'Utara Direction');
+            svg.appendChild(triangle_vc_vd_utara);
+            const triangle_vc_vd_selatan = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle_vc_vd_selatan.setAttribute('points', `${vcVd_triangle2_x + vcVd_triangle_size},${vcVdTriangleY - vcVd_triangle_size} ${vcVd_triangle2_x + vcVd_triangle_size},${vcVdTriangleY + vcVd_triangle_size} ${vcVd_triangle2_x - vcVd_triangle_size},${vcVdTriangleY}`);
+            triangle_vc_vd_selatan.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle_vc_vd_selatan.setAttribute('stroke', getDefaultColor());
+            triangle_vc_vd_selatan.setAttribute('stroke-width', '2');
+            triangle_vc_vd_selatan.setAttribute('cursor', 'pointer');
+            triangle_vc_vd_selatan.onclick = () => handleTriangleClick('T3', 'Selatan Direction');
+            svg.appendChild(triangle_vc_vd_selatan);
+            const shuntRouteT3_startX = vcVd_triangle1_x - vcVd_triangle_size;
+            const shuntRouteT3_centerY = vcVdTriangleY + vcVd_triangle_size + 10;
+            const shuntRouteT3_size = 10;
+            const shuntRouteT3_horizontal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteT3_horizontal.setAttribute('x1', shuntRouteT3_startX);
+            shuntRouteT3_horizontal.setAttribute('y1', shuntRouteT3_centerY);
+            shuntRouteT3_horizontal.setAttribute('x2', shuntRouteT3_startX - shuntRouteT3_size);
+            shuntRouteT3_horizontal.setAttribute('y2', shuntRouteT3_centerY);
+            shuntRouteT3_horizontal.setAttribute('stroke', getDefaultColor());
+            shuntRouteT3_horizontal.setAttribute('stroke-width', '2');
+            shuntRouteT3_horizontal.setAttribute('stroke-linecap', 'round');
+            shuntRouteT3_horizontal.setAttribute('cursor', 'pointer');
+            shuntRouteT3_horizontal.setAttribute('data-signal', 'T3');
+            shuntRouteT3_horizontal.onclick = () => handleShuntRouteClick('T3', 'Shunt');
+            svg.appendChild(shuntRouteT3_horizontal);
+            const shuntRouteT3_diagonal = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            shuntRouteT3_diagonal.setAttribute('x1', shuntRouteT3_startX - shuntRouteT3_size);
+            shuntRouteT3_diagonal.setAttribute('y1', shuntRouteT3_centerY);
+            shuntRouteT3_diagonal.setAttribute('x2', shuntRouteT3_startX - shuntRouteT3_size / 5);
+            shuntRouteT3_diagonal.setAttribute('y2', shuntRouteT3_centerY + shuntRouteT3_size * 0.8);
+            shuntRouteT3_diagonal.setAttribute('stroke', getDefaultColor());
+            shuntRouteT3_diagonal.setAttribute('stroke-width', '2');
+            shuntRouteT3_diagonal.setAttribute('stroke-linecap', 'round');
+            shuntRouteT3_diagonal.setAttribute('cursor', 'pointer');
+            shuntRouteT3_diagonal.setAttribute('data-signal', 'T3');
+            shuntRouteT3_diagonal.onclick = () => handleShuntRouteClick('T3', 'Shunt');
+            svg.appendChild(shuntRouteT3_diagonal);
+            const triangleGapMidX = vcVd_triangle2_x;
+            const triangleSize = 12;
+            const triangleY = lowerY;
+            const triangle = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle.setAttribute('points', `${triangleGapMidX + triangleSize},${triangleY - triangleSize} ${triangleGapMidX + triangleSize},${triangleY + triangleSize} ${triangleGapMidX - triangleSize},${triangleY}`);
+            triangle.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle.setAttribute('stroke', getDefaultColor());
+            triangle.setAttribute('stroke-width', '2');
+            triangle.setAttribute('cursor', 'pointer');
+            triangle.onclick = () => handleTriangleClick('T5', 'Selatan Direction');
+            svg.appendChild(triangle);
+            const adAcGapMidX = adEnd + 12;
+            const adAcTriangleY = lowerY;
+            const triangle_ad_ac = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle_ad_ac.setAttribute('points', `${adAcGapMidX + triangleSize},${adAcTriangleY - triangleSize} ${adAcGapMidX + triangleSize},${adAcTriangleY + triangleSize} ${adAcGapMidX - triangleSize},${adAcTriangleY}`);
+            triangle_ad_ac.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle_ad_ac.setAttribute('stroke', getDefaultColor());
+            triangle_ad_ac.setAttribute('stroke-width', '2');
+            triangle_ad_ac.setAttribute('cursor', 'pointer');
+            triangle_ad_ac.onclick = () => handleTriangleClick('T7', 'Selatan Direction');
+            svg.appendChild(triangle_ad_ac);
+            const vaVbTriangleY = upperY;
+            const triangle_size = 12;
+            const triangle_va_vb_utara = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle_va_vb_utara.setAttribute('points', `${vaVb_triangle1_x - triangle_size},${vaVbTriangleY - triangle_size} ${vaVb_triangle1_x - triangle_size},${vaVbTriangleY + triangle_size} ${vaVb_triangle1_x + triangle_size},${vaVbTriangleY}`);
+            triangle_va_vb_utara.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle_va_vb_utara.setAttribute('stroke', getDefaultColor());
+            triangle_va_vb_utara.setAttribute('stroke-width', '2');
+            triangle_va_vb_utara.setAttribute('cursor', 'pointer');
+            triangle_va_vb_utara.onclick = () => handleTriangleClick('N4', 'Utara Direction');
+            svg.appendChild(triangle_va_vb_utara);
+            const triangle_va_vb_selatan = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            triangle_va_vb_selatan.setAttribute('points', `${vaVb_triangle2_x + triangle_size},${vaVbTriangleY - triangle_size} ${vaVb_triangle2_x + triangle_size},${vaVbTriangleY + triangle_size} ${vaVb_triangle2_x - triangle_size},${vaVbTriangleY}`);
+            triangle_va_vb_selatan.setAttribute('fill', state.power === 'off' ? '#ff00ff' : '#ffffff');
+            triangle_va_vb_selatan.setAttribute('stroke', getDefaultColor());
+            triangle_va_vb_selatan.setAttribute('stroke-width', '2');
+            triangle_va_vb_selatan.setAttribute('cursor', 'pointer');
+            triangle_va_vb_selatan.onclick = () => handleTriangleClick('N4', 'Selatan Direction');
+            svg.appendChild(triangle_va_vb_selatan);
+
+            // ===== DIAGONAL =====
+            let diag_base_x1 = vcRight_start - 2;
+            let diag_base_y1 = upperY;
+            let diag_base_x2 = abLeft_end + 2;
+            let diag_base_y2 = lowerY;
+            if (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'NORMAL') {
+                diag_base_x1 = vcRight_start - 2;
+                diag_base_y1 = upperY;
+            }
+            if (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'REVERSE') {
+                diag_base_x2 = abLeft_end + 2;
+                diag_base_y2 = lowerY;
+            }
+            const diag_dx = diag_base_x2 - diag_base_x1;
+            const diag_dy = diag_base_y2 - diag_base_y1;
+            const diag_length = Math.sqrt(diag_dx * diag_dx + diag_dy * diag_dy);
+            const diag_ux = diag_dx / diag_length;
+            const diag_uy = diag_dy / diag_length;
+            let diag_x1 = diag_base_x1;
+            let diag_y1 = diag_base_y1;
+            let diag_x2 = diag_base_x2;
+            let diag_y2 = diag_base_y2;
+            if (state.switches['11A'] === 'NORMAL') {
+                diag_x1 += diag_ux * 50;
+                diag_y1 += diag_uy * 50;
+            }
+            if (state.switches['11B'] === 'NORMAL') {
+                diag_x2 -= diag_ux * 50;
+                diag_y2 -= diag_uy * 50;
+            }
+            const diag_mid_x = (diag_x1 + diag_x2) / 2;
+            const diag_mid_y = (diag_y1 + diag_y2) / 2;
+            const gap_distance = 4;
+            const diag_split1_x2 = diag_mid_x - diag_ux * gap_distance;
+            const diag_split1_y2 = diag_mid_y - diag_uy * gap_distance;
+            const diag_split2_x1 = diag_mid_x + diag_ux * gap_distance;
+            const diag_split2_y1 = diag_mid_y + diag_uy * gap_distance;
+            if (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'NORMAL') {
+                const diagLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine1.setAttribute('x1', diag_x1);
+                diagLine1.setAttribute('y1', diag_y1);
+                diagLine1.setAttribute('x2', diag_split1_x2);
+                diagLine1.setAttribute('y2', diag_split1_y2);
+                diagLine1.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine1.setAttribute('stroke-width', '10');
+                diagLine1.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(diagLine1);
+                const diagLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine2.setAttribute('x1', diag_split2_x1);
+                diagLine2.setAttribute('y1', diag_split2_y1);
+                diagLine2.setAttribute('x2', diag_x2);
+                diagLine2.setAttribute('y2', diag_y2);
+                diagLine2.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine2.setAttribute('stroke-width', '10');
+                diagLine2.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(diagLine2);
+            } else if (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'REVERSE') {
+                const diagLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine1.setAttribute('x1', diag_x1);
+                diagLine1.setAttribute('y1', diag_y1);
+                diagLine1.setAttribute('x2', diag_split1_x2);
+                diagLine1.setAttribute('y2', diag_split1_y2);
+                diagLine1.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine1.setAttribute('stroke-width', '10');
+                diagLine1.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(diagLine1);
+                const diagLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine2.setAttribute('x1', diag_split2_x1);
+                diagLine2.setAttribute('y1', diag_split2_y1);
+                diagLine2.setAttribute('x2', diag_x2);
+                diagLine2.setAttribute('y2', diag_y2);
+                diagLine2.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine2.setAttribute('stroke-width', '10');
+                diagLine2.setAttribute('stroke-linecap', 'round');
+                svg.appendChild(diagLine2);
+            } else if (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'NORMAL') {
+                const diagLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine1.setAttribute('x1', diag_x1);
+                diagLine1.setAttribute('y1', diag_y1);
+                diagLine1.setAttribute('x2', diag_split1_x2);
+                diagLine1.setAttribute('y2', diag_split1_y2);
+                diagLine1.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine1.setAttribute('stroke-width', '10');
+                diagLine1.setAttribute('stroke-linecap', 'round');
+                svg.appendChild(diagLine1);
+                const diagLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine2.setAttribute('x1', diag_split2_x1);
+                diagLine2.setAttribute('y1', diag_split2_y1);
+                diagLine2.setAttribute('x2', diag_x2);
+                diagLine2.setAttribute('y2', diag_y2);
+                diagLine2.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine2.setAttribute('stroke-width', '10');
+                diagLine2.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(diagLine2);
+            } else {
+                const diagLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine1.setAttribute('x1', diag_x1);
+                diagLine1.setAttribute('y1', diag_y1);
+                diagLine1.setAttribute('x2', diag_split1_x2);
+                diagLine1.setAttribute('y2', diag_split1_y2);
+                diagLine1.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine1.setAttribute('stroke-width', '10');
+                diagLine1.setAttribute('stroke-linecap', 'round');
+                svg.appendChild(diagLine1);
+                const diagLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                diagLine2.setAttribute('x1', diag_split2_x1);
+                diagLine2.setAttribute('y1', diag_split2_y1);
+                diagLine2.setAttribute('x2', diag_x2);
+                diagLine2.setAttribute('y2', diag_y2);
+                diagLine2.setAttribute('stroke', getColor(state.tracks['DIAG']));
+                diagLine2.setAttribute('stroke-width', '10');
+                diagLine2.setAttribute('stroke-linecap', 'round');
+                svg.appendChild(diagLine2);
+            }
+            if (state.switches['11A'] === 'NORMAL') {
+                const vc11ALine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                vc11ALine.setAttribute('x1', vc11A_start - 10);
+                vc11ALine.setAttribute('y1', upperY);
+                vc11ALine.setAttribute('x2', vc11A_end + 10);
+                vc11ALine.setAttribute('y2', upperY);
+                vc11ALine.setAttribute('stroke', getColor(state.tracks['VC_LEFT']));
+                vc11ALine.setAttribute('stroke-width', '10');
+                vc11ALine.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(vc11ALine);
+            }
+            if (state.switchStates['11A'] === 'broken' && state.power === 'on') {
+                const broken11A = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                broken11A.setAttribute('cx', (vc11A_start + vc11A_end) / 2);
+                broken11A.setAttribute('cy', upperY);
+                broken11A.setAttribute('r', '8');
+                broken11A.setAttribute('fill', 'none');
+                broken11A.setAttribute('stroke', '#ffff00');
+                broken11A.setAttribute('stroke-width', '2');
+                broken11A.setAttribute('class', 'broken-ring');
+                broken11A.setAttribute('cursor', 'pointer');
+                broken11A.onclick = () => toggleSwitchState('11A');
+                svg.appendChild(broken11A);
+            }
+            if (state.switches['11B'] === 'NORMAL') {
+                const ab11BLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                ab11BLine.setAttribute('x1', ab11B_start - 10);
+                ab11BLine.setAttribute('y1', lowerY);
+                ab11BLine.setAttribute('x2', ab11B_end + 10);
+                ab11BLine.setAttribute('y2', lowerY);
+                ab11BLine.setAttribute('stroke', getColor(state.tracks['AB_LEFT']));
+                ab11BLine.setAttribute('stroke-width', '10');
+                ab11BLine.setAttribute('stroke-linecap', 'butt');
+                svg.appendChild(ab11BLine);
+            }
+            if (state.switchStates['11B'] === 'broken' && state.power === 'on') {
+                const broken11B = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                broken11B.setAttribute('cx', (ab11B_start + ab11B_end) / 2);
+                broken11B.setAttribute('cy', lowerY);
+                broken11B.setAttribute('r', '8');
+                broken11B.setAttribute('fill', 'none');
+                broken11B.setAttribute('stroke', '#ffff00');
+                broken11B.setAttribute('stroke-width', '2');
+                broken11B.setAttribute('class', 'broken-ring');
+                broken11B.setAttribute('cursor', 'pointer');
+                broken11B.onclick = () => toggleSwitchState('11B');
+                svg.appendChild(broken11B);
+            }
+            const middleY = (upperY + lowerY) / 2;
+            drawLabel(startX - 50, middleY, 'SELATAN');
+            drawLabel(aaEnd + 50, middleY, 'UTARA');
+
+            // ===== PLATFORMS =====
+            const platformB_X = startX + vaWidth / 2 - 50;
+            const platformY_top = upperY + 20;
+            const platformY_bottom = lowerY - 20;
+            const platformWidth = 100;
+            const platformHeight = platformY_bottom - platformY_top;
+            const platformB = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            platformB.setAttribute('x', platformB_X);
+            platformB.setAttribute('y', platformY_top);
+            platformB.setAttribute('width', platformWidth);
+            platformB.setAttribute('height', platformHeight);
+            platformB.setAttribute('fill', 'none');
+            platformB.setAttribute('stroke', getDefaultColor());
+            platformB.setAttribute('stroke-width', '2');
+            svg.appendChild(platformB);
+            drawLabel(platformB_X + platformWidth / 2, platformY_top + platformHeight / 2, 'Platform B');
+            const platformA_X = vdStart + standardWidth / 2 - 50;
+            const platformA = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            platformA.setAttribute('x', platformA_X);
+            platformA.setAttribute('y', platformY_top);
+            platformA.setAttribute('width', platformWidth);
+            platformA.setAttribute('height', platformHeight);
+            platformA.setAttribute('fill', 'none');
+            platformA.setAttribute('stroke', getDefaultColor());
+            platformA.setAttribute('stroke-width', '2');
+            svg.appendChild(platformA);
+            drawLabel(platformA_X + platformWidth / 2, platformY_top + platformHeight / 2, 'Platform A');
+
+            // ===== SIGNALS =====
+            const signalPoleX = vaEnd + (vbStart - vaEnd) / 2;
+            const signalPoleY_top = 20;
+            const signalPoleY_bottom = signalPoleY_top + 20;
+            const poleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            poleLine.setAttribute('x1', signalPoleX);
+            poleLine.setAttribute('y1', signalPoleY_top);
+            poleLine.setAttribute('x2', signalPoleX);
+            poleLine.setAttribute('y2', signalPoleY_bottom);
+            poleLine.setAttribute('stroke', getDefaultColor());
+            poleLine.setAttribute('stroke-width', '3');
+            svg.appendChild(poleLine);
+            const lampX = signalPoleX + 20;
+            const lampY = signalPoleY_top + 10;
+            const lampRadius = 10;
+            const lampArm = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            lampArm.setAttribute('x1', signalPoleX);
+            lampArm.setAttribute('y1', lampY);
+            lampArm.setAttribute('x2', lampX - lampRadius);
+            lampArm.setAttribute('y2', lampY);
+            lampArm.setAttribute('stroke', getDefaultColor());
+            lampArm.setAttribute('stroke-width', '2');
+            svg.appendChild(lampArm);
+            const lampCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            lampCircle.setAttribute('cx', lampX);
+            lampCircle.setAttribute('cy', lampY);
+            lampCircle.setAttribute('r', lampRadius);
+            lampCircle.setAttribute('fill', state.signals.N4 === 'broken' ? 'none' : getSignalColor(state.signals.N4));
+            lampCircle.setAttribute('stroke', getDefaultColor());
+            lampCircle.setAttribute('stroke-width', '2');
+            lampCircle.setAttribute('cursor', 'pointer');
+            lampCircle.onclick = () => cycleSignal('N4');
+            svg.appendChild(lampCircle);
+            if (state.signals.N4 === 'broken' && state.power === 'on') {
+                const brokenRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                brokenRing.setAttribute('cx', lampX);
+                brokenRing.setAttribute('cy', lampY);
+                brokenRing.setAttribute('r', lampRadius + 4);
+                brokenRing.setAttribute('fill', 'none');
+                brokenRing.setAttribute('stroke', '#ffff00');
+                brokenRing.setAttribute('stroke-width', '2');
+                brokenRing.setAttribute('cursor', 'pointer');
+                brokenRing.setAttribute('class', 'broken-ring');
+                brokenRing.onclick = () => cycleSignal('N4');
+                svg.appendChild(brokenRing);
+            }
+            const n4LabelX = signalPoleX - 25;
+            const n4LabelY = lampY + 6;
+            const n4BgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            n4BgRect.setAttribute('x', n4LabelX - 15);
+            n4BgRect.setAttribute('y', n4LabelY - 12);
+            n4BgRect.setAttribute('width', '30');
+            n4BgRect.setAttribute('height', '18');
+            n4BgRect.setAttribute('fill', state.power === 'on' ? '#ff0000' : 'none');
+            n4BgRect.setAttribute('rx', '2');
+            svg.appendChild(n4BgRect);
+            drawLabel(n4LabelX, n4LabelY, 'N4');
+            const t3PoleX = vcEnd + 32;
+            const t3PoleY_top = 20;
+            const t3PoleY_bottom = t3PoleY_top + 20;
+            const t3PoleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t3PoleLine.setAttribute('x1', t3PoleX);
+            t3PoleLine.setAttribute('y1', t3PoleY_top);
+            t3PoleLine.setAttribute('x2', t3PoleX);
+            t3PoleLine.setAttribute('y2', t3PoleY_bottom);
+            t3PoleLine.setAttribute('stroke', getDefaultColor());
+            t3PoleLine.setAttribute('stroke-width', '3');
+            svg.appendChild(t3PoleLine);
+            const t3LampRadius = 10;
+            const t3PoleLength = 20;
+            const t3HoodRadiusX = t3PoleLength * 1.3;
+            const t3ArmLength = 8;
+            const t3LampX = t3PoleX - t3ArmLength - t3HoodRadiusX - t3LampRadius;
+            const t3LampY = t3PoleY_top + 10;
+            const t3LampCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            t3LampCircle.setAttribute('cx', t3LampX);
+            t3LampCircle.setAttribute('cy', t3LampY);
+            t3LampCircle.setAttribute('r', t3LampRadius);
+            t3LampCircle.setAttribute('fill', state.signals.T3 === 'broken' ? 'none' : getSignalColor(state.signals.T3));
+            t3LampCircle.setAttribute('stroke', getDefaultColor());
+            t3LampCircle.setAttribute('stroke-width', '2');
+            t3LampCircle.setAttribute('cursor', 'pointer');
+            t3LampCircle.onclick = () => cycleSignalT3();
+            svg.appendChild(t3LampCircle);
+            if (state.signals.T3 === 'broken' && state.power === 'on') {
+                const brokenRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                brokenRing.setAttribute('cx', t3LampX);
+                brokenRing.setAttribute('cy', t3LampY);
+                brokenRing.setAttribute('r', t3LampRadius + 4);
+                brokenRing.setAttribute('fill', 'none');
+                brokenRing.setAttribute('stroke', '#ffff00');
+                brokenRing.setAttribute('stroke-width', '2');
+                brokenRing.setAttribute('cursor', 'pointer');
+                brokenRing.setAttribute('class', 'broken-ring');
+                brokenRing.onclick = () => cycleSignalT3();
+                svg.appendChild(brokenRing);
+            }
+            const t3LabelX = t3PoleX + 25;
+            const t3LabelY = t3LampY + 6;
+            const t3BgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            t3BgRect.setAttribute('x', t3LabelX - 15);
+            t3BgRect.setAttribute('y', t3LabelY - 12);
+            t3BgRect.setAttribute('width', '30');
+            t3BgRect.setAttribute('height', '18');
+            t3BgRect.setAttribute('fill', state.power === 'on' ? '#ff0000' : 'none');
+            t3BgRect.setAttribute('rx', '2');
+            svg.appendChild(t3BgRect);
+            drawLabel(t3LabelX, t3LabelY, 'T3');
+            const t3HoodRadiusY = t3PoleLength;
+            const t3HoodCenterX = t3LampX + t3LampRadius + t3HoodRadiusX;
+            const t3HoodCenterY = t3LampY - t3LampRadius;
+            const t3HoodPath = `M ${t3HoodCenterX},${t3HoodCenterY}
+                              L ${t3HoodCenterX - t3HoodRadiusX},${t3HoodCenterY}
+                              A ${t3HoodRadiusX},${t3HoodRadiusY} 0 0,0 ${t3HoodCenterX},${t3HoodCenterY + t3HoodRadiusY}
+                              Z`;
+            const t3Hood = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            t3Hood.setAttribute('d', t3HoodPath);
+            t3Hood.setAttribute('fill', state.hoods.T3 === 'filled' ? '#0066ff' : 'none');
+            t3Hood.setAttribute('stroke', getDefaultColor());
+            t3Hood.setAttribute('stroke-width', '2');
+            t3Hood.setAttribute('stroke-linejoin', 'miter');
+            t3Hood.setAttribute('cursor', 'pointer');
+            t3Hood.onclick = () => toggleHood('T3');
+            svg.appendChild(t3Hood);
+            if (state.hoods.T3 === 'filled') {
+                const t3DiagLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                const gapFromApex = 5;
+                const startX = t3HoodCenterX - gapFromApex;
+                const startY = t3HoodCenterY + gapFromApex;
+                const gapFromArc = 7;
+                const diagDistance = Math.min(t3HoodRadiusX, t3HoodRadiusY) - gapFromApex - gapFromArc;
+                const endX = startX - diagDistance;
+                const endY = startY + diagDistance;
+                t3DiagLine.setAttribute('x1', startX);
+                t3DiagLine.setAttribute('y1', startY);
+                t3DiagLine.setAttribute('x2', endX);
+                t3DiagLine.setAttribute('y2', endY);
+                t3DiagLine.setAttribute('stroke', getDefaultColor());
+                t3DiagLine.setAttribute('stroke-width', '2');
+                svg.appendChild(t3DiagLine);
+            }
+            const t3ArmStartX = t3HoodCenterX;
+            const t3ArmEndX = t3PoleX;
+            const t3LampArm = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t3LampArm.setAttribute('x1', t3PoleX);
+            t3LampArm.setAttribute('y1', t3LampY);
+            t3LampArm.setAttribute('x2', t3HoodCenterX);
+            t3LampArm.setAttribute('y2', t3LampY);
+            t3LampArm.setAttribute('stroke', getDefaultColor());
+            t3LampArm.setAttribute('stroke-width', '2');
+            svg.appendChild(t3LampArm);
+            drawLabel(t3LampX + 5, t3LampY - 20, 'T3');
+            const t7PoleX = adEnd + 32;
+            const t7PoleY_top = lowerY + 40;
+            const t7PoleY_bottom = t7PoleY_top + 20;
+            const t7PoleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t7PoleLine.setAttribute('x1', t7PoleX);
+            t7PoleLine.setAttribute('y1', t7PoleY_top);
+            t7PoleLine.setAttribute('x2', t7PoleX);
+            t7PoleLine.setAttribute('y2', t7PoleY_bottom);
+            t7PoleLine.setAttribute('stroke', getDefaultColor());
+            t7PoleLine.setAttribute('stroke-width', '3');
+            svg.appendChild(t7PoleLine);
+            const t7LampX = t7PoleX - 20;
+            const t7LampY = t7PoleY_top + 10;
+            const t7LampRadius = 10;
+            const t7LampArm = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t7LampArm.setAttribute('x1', t7PoleX);
+            t7LampArm.setAttribute('y1', t7LampY);
+            t7LampArm.setAttribute('x2', t7LampX + t7LampRadius);
+            t7LampArm.setAttribute('y2', t7LampY);
+            t7LampArm.setAttribute('stroke', getDefaultColor());
+            t7LampArm.setAttribute('stroke-width', '2');
+            svg.appendChild(t7LampArm);
+            const t7LampCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            t7LampCircle.setAttribute('cx', t7LampX);
+            t7LampCircle.setAttribute('cy', t7LampY);
+            t7LampCircle.setAttribute('r', t7LampRadius);
+            t7LampCircle.setAttribute('fill', state.signals.T7 === 'broken' ? 'none' : getSignalColor(state.signals.T7));
+            t7LampCircle.setAttribute('stroke', getDefaultColor());
+            t7LampCircle.setAttribute('stroke-width', '2');
+            t7LampCircle.setAttribute('cursor', 'pointer');
+            t7LampCircle.onclick = () => cycleSignal('T7');
+            svg.appendChild(t7LampCircle);
+            if (state.signals.T7 === 'broken' && state.power === 'on') {
+                const brokenRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                brokenRing.setAttribute('cx', t7LampX);
+                brokenRing.setAttribute('cy', t7LampY);
+                brokenRing.setAttribute('r', t7LampRadius + 4);
+                brokenRing.setAttribute('fill', 'none');
+                brokenRing.setAttribute('stroke', '#ffff00');
+                brokenRing.setAttribute('stroke-width', '2');
+                brokenRing.setAttribute('cursor', 'pointer');
+                brokenRing.setAttribute('class', 'broken-ring');
+                brokenRing.onclick = () => cycleSignal('T7');
+                svg.appendChild(brokenRing);
+            }
+            const t7LabelX = t7PoleX + 25;
+            const t7LabelY = t7LampY + 6;
+            const t7BgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            t7BgRect.setAttribute('x', t7LabelX - 15);
+            t7BgRect.setAttribute('y', t7LabelY - 12);
+            t7BgRect.setAttribute('width', '30');
+            t7BgRect.setAttribute('height', '18');
+            t7BgRect.setAttribute('fill', state.power === 'on' ? '#ff0000' : 'none');
+            t7BgRect.setAttribute('rx', '2');
+            svg.appendChild(t7BgRect);
+            drawLabel(t7LabelX, t7LabelY, 'T7');
+            const s6PoleX = acStart + standardWidth + 8 + (abStart - (acStart + standardWidth + 8)) / 2;
+            const s6PoleY_top = lowerY + 40;
+            const s6PoleY_bottom = s6PoleY_top + 20;
+            const s6PoleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            s6PoleLine.setAttribute('x1', s6PoleX);
+            s6PoleLine.setAttribute('y1', s6PoleY_top);
+            s6PoleLine.setAttribute('x2', s6PoleX);
+            s6PoleLine.setAttribute('y2', s6PoleY_bottom);
+            s6PoleLine.setAttribute('stroke', getDefaultColor());
+            s6PoleLine.setAttribute('stroke-width', '3');
+            svg.appendChild(s6PoleLine);
+            const s6PoleLength = 20;
+            const s6HoodRadiusX = s6PoleLength * 1.3;
+            const s6ArmLength = 8;
+            const s6HoodY = s6PoleY_bottom - s6PoleLength / 2 - 10;
+            const s6HoodX = s6PoleX + s6ArmLength;
+            const s6HoodRadiusY = s6PoleLength;
+            const s6HoodPath = `M ${s6HoodX},${s6HoodY + s6HoodRadiusY}
+                              L ${s6HoodX + s6HoodRadiusX},${s6HoodY + s6HoodRadiusY}
+                              A ${s6HoodRadiusX},${s6HoodRadiusY} 0 0,0 ${s6HoodX},${s6HoodY}
+                              Z`;
+            const s6Hood = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            s6Hood.setAttribute('d', s6HoodPath);
+            s6Hood.setAttribute('fill', state.hoods.S6 === 'filled' ? '#0066ff' : 'none');
+            s6Hood.setAttribute('stroke', getDefaultColor());
+            s6Hood.setAttribute('stroke-width', '2');
+            s6Hood.setAttribute('stroke-linejoin', 'miter');
+            s6Hood.setAttribute('cursor', 'pointer');
+            s6Hood.onclick = () => toggleHood('S6');
+            svg.appendChild(s6Hood);
+            if (state.hoods.S6 === 'filled') {
+                const s6DiagLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                const gapFromApex = 5;
+                const startX = s6HoodX + gapFromApex;
+                const startY = s6HoodY + s6HoodRadiusY - gapFromApex;
+                const gapFromArc = 7;
+                const diagDistance = Math.min(s6HoodRadiusX, s6HoodRadiusY) - gapFromApex - gapFromArc;
+                const endX = startX + diagDistance;
+                const endY = startY - diagDistance;
+                s6DiagLine.setAttribute('x1', startX);
+                s6DiagLine.setAttribute('y1', startY);
+                s6DiagLine.setAttribute('x2', endX);
+                s6DiagLine.setAttribute('y2', endY);
+                s6DiagLine.setAttribute('stroke', getDefaultColor());
+                s6DiagLine.setAttribute('stroke-width', '2');
+                svg.appendChild(s6DiagLine);
+            }
+            const s6ArmStartX = s6PoleX;
+            const s6ArmEndX = s6HoodX;
+            const s6Arm = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            s6Arm.setAttribute('x1', s6ArmStartX);
+            s6Arm.setAttribute('y1', s6HoodY + 10);
+            s6Arm.setAttribute('x2', s6ArmEndX);
+            s6Arm.setAttribute('y2', s6HoodY + 10);
+            s6Arm.setAttribute('stroke', getDefaultColor());
+            s6Arm.setAttribute('stroke-width', '2');
+            svg.appendChild(s6Arm);
+            const s6LabelX = s6PoleX - 25;
+            const s6LabelY = s6HoodY + 10 + 6;
+            const s6BgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            s6BgRect.setAttribute('x', s6LabelX - 15);
+            s6BgRect.setAttribute('y', s6LabelY - 12);
+            s6BgRect.setAttribute('width', '30');
+            s6BgRect.setAttribute('height', '18');
+            s6BgRect.setAttribute('fill', state.power === 'on' ? '#ff0000' : 'none');
+            s6BgRect.setAttribute('rx', '2');
+            svg.appendChild(s6BgRect);
+            drawLabel(s6LabelX, s6LabelY, 'S6');
+            const t5PoleX = abRight_end + 32;
+            const t5PoleY_top = lowerY + 40;
+            const t5PoleY_bottom = t5PoleY_top + 20;
+            const t5PoleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t5PoleLine.setAttribute('x1', t5PoleX);
+            t5PoleLine.setAttribute('y1', t5PoleY_top);
+            t5PoleLine.setAttribute('x2', t5PoleX);
+            t5PoleLine.setAttribute('y2', t5PoleY_bottom);
+            t5PoleLine.setAttribute('stroke', getDefaultColor());
+            t5PoleLine.setAttribute('stroke-width', '3');
+            svg.appendChild(t5PoleLine);
+            const t5LampRadius = 10;
+            const poleLength = 20;
+            const hoodRadiusX = poleLength * 1.3;
+            const armLength = 8;
+            const t5LampX = t5PoleX - armLength - hoodRadiusX - t5LampRadius;
+            const t5LampY = t5PoleY_top + 10;
+            const t5LampCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            t5LampCircle.setAttribute('cx', t5LampX);
+            t5LampCircle.setAttribute('cy', t5LampY);
+            t5LampCircle.setAttribute('r', t5LampRadius);
+            t5LampCircle.setAttribute('fill', state.signals.T5 === 'broken' ? 'none' : getSignalColor(state.signals.T5));
+            t5LampCircle.setAttribute('stroke', getDefaultColor());
+            t5LampCircle.setAttribute('stroke-width', '2');
+            t5LampCircle.setAttribute('cursor', 'pointer');
+            t5LampCircle.onclick = () => cycleSignalT5();
+            svg.appendChild(t5LampCircle);
+            if (state.signals.T5 === 'broken' && state.power === 'on') {
+                const brokenRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                brokenRing.setAttribute('cx', t5LampX);
+                brokenRing.setAttribute('cy', t5LampY);
+                brokenRing.setAttribute('r', t5LampRadius + 4);
+                brokenRing.setAttribute('fill', 'none');
+                brokenRing.setAttribute('stroke', '#ffff00');
+                brokenRing.setAttribute('stroke-width', '2');
+                brokenRing.setAttribute('cursor', 'pointer');
+                brokenRing.setAttribute('class', 'broken-ring');
+                brokenRing.onclick = () => cycleSignalT5();
+                svg.appendChild(brokenRing);
+            }
+            const hoodRadiusY = poleLength;
+            const hoodCenterX = t5LampX + t5LampRadius + hoodRadiusX;
+            const hoodCenterY = t5LampY - t5LampRadius;
+            const hoodPath = `M ${hoodCenterX},${hoodCenterY}
+                              L ${hoodCenterX - hoodRadiusX},${hoodCenterY}
+                              A ${hoodRadiusX},${hoodRadiusY} 0 0,0 ${hoodCenterX},${hoodCenterY + hoodRadiusY}
+                              Z`;
+            const t5Hood = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            t5Hood.setAttribute('d', hoodPath);
+            t5Hood.setAttribute('fill', state.hoods.T5 === 'filled' ? '#0066ff' : 'none');
+            t5Hood.setAttribute('stroke', getDefaultColor());
+            t5Hood.setAttribute('stroke-width', '2');
+            t5Hood.setAttribute('stroke-linejoin', 'miter');
+            t5Hood.setAttribute('cursor', 'pointer');
+            t5Hood.onclick = () => toggleHood('T5');
+            svg.appendChild(t5Hood);
+            if (state.hoods.T5 === 'filled') {
+                const t5DiagLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                const gapFromApex = 5;
+                const startX = hoodCenterX - gapFromApex;
+                const startY = hoodCenterY + gapFromApex;
+                const gapFromArc = 7;
+                const diagDistance = Math.min(hoodRadiusX, hoodRadiusY) - gapFromApex - gapFromArc;
+                const endX = startX - diagDistance;
+                const endY = startY + diagDistance;
+                t5DiagLine.setAttribute('x1', startX);
+                t5DiagLine.setAttribute('y1', startY);
+                t5DiagLine.setAttribute('x2', endX);
+                t5DiagLine.setAttribute('y2', endY);
+                t5DiagLine.setAttribute('stroke', getDefaultColor());
+                t5DiagLine.setAttribute('stroke-width', '2');
+                svg.appendChild(t5DiagLine);
+            }
+            const armStartX = hoodCenterX;
+            const armEndX = t5PoleX;
+            const t5LampArm = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            t5LampArm.setAttribute('x1', t5PoleX);
+            t5LampArm.setAttribute('y1', t5LampY);
+            t5LampArm.setAttribute('x2', hoodCenterX);
+            t5LampArm.setAttribute('y2', t5LampY);
+            t5LampArm.setAttribute('stroke', getDefaultColor());
+            t5LampArm.setAttribute('stroke-width', '2');
+            svg.appendChild(t5LampArm);
+            const t5LabelX = t5PoleX + 25;
+            const t5LabelY = t5LampY + 6;
+            const t5BgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            t5BgRect.setAttribute('x', t5LabelX - 15);
+            t5BgRect.setAttribute('y', t5LabelY - 12);
+            t5BgRect.setAttribute('width', '30');
+            t5BgRect.setAttribute('height', '18');
+            t5BgRect.setAttribute('fill', state.power === 'on' ? '#ff0000' : 'none');
+            t5BgRect.setAttribute('rx', '2');
+            svg.appendChild(t5BgRect);
+            drawLabel(t5LabelX, t5LabelY, 'T5');
+        }
+        
+        // (Your full updateControls() function)
+        function updateControls() {
+            const container = document.getElementById('trackControls');
+            container.innerHTML = '';
+            let div = document.createElement('div');
+            div.className = 'section-title';
+            div.textContent = 'POINT MACHINES';
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            let label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = '11A';
+            let btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group';
+            let btnNormal = document.createElement('button');
+            btnNormal.textContent = 'NORMAL';
+            btnNormal.className = state.switches['11A'] === 'NORMAL' ? 'active' : '';
+            btnNormal.onclick = () => toggleSwitch('11A');
+            let btnReverse = document.createElement('button');
+            btnReverse.textContent = 'REVERSE';
+            btnReverse.className = state.switches['11A'] === 'REVERSE' ? 'active' : '';
+            btnReverse.onclick = () => toggleSwitch('11A');
+            btnGroup.appendChild(btnNormal);
+            btnGroup.appendChild(btnReverse);
+            div.appendChild(label);
+            div.appendChild(btnGroup);
+            let stateGroup = document.createElement('div');
+            stateGroup.className = 'btn-group';
+            let btnOK = document.createElement('button');
+            btnOK.textContent = 'OK';
+            btnOK.className = state.switchStates['11A'] === 'OK' ? 'active' : '';
+            btnOK.onclick = () => toggleSwitchState('11A');
+            let btnBroken = document.createElement('button');
+            btnBroken.textContent = 'BROKEN';
+            btnBroken.className = state.switchStates['11A'] === 'broken' ? 'active' : '';
+            btnBroken.onclick = () => toggleSwitchState('11A');
+            stateGroup.appendChild(btnOK);
+            stateGroup.appendChild(btnBroken);
+            div.appendChild(stateGroup);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = '11B';
+            btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group';
+            btnNormal = document.createElement('button');
+            btnNormal.textContent = 'NORMAL';
+            btnNormal.className = state.switches['11B'] === 'NORMAL' ? 'active' : '';
+            btnNormal.onclick = () => toggleSwitch('11B');
+            btnReverse = document.createElement('button');
+            btnReverse.textContent = 'REVERSE';
+            btnReverse.className = state.switches['11B'] === 'REVERSE' ? 'active' : '';
+            btnReverse.onclick = () => toggleSwitch('11B');
+            btnGroup.appendChild(btnNormal);
+            btnGroup.appendChild(btnReverse);
+            div.appendChild(label);
+            div.appendChild(btnGroup);
+            stateGroup = document.createElement('div');
+            stateGroup.className = 'btn-group';
+            btnOK = document.createElement('button');
+            btnOK.textContent = 'OK';
+            btnOK.className = state.switchStates['11B'] === 'OK' ? 'active' : '';
+            btnOK.onclick = () => toggleSwitchState('11B');
+            btnBroken = document.createElement('button');
+            btnBroken.textContent = 'BROKEN';
+            btnBroken.className = state.switchStates['11B'] === 'broken' ? 'active' : '';
+            btnBroken.onclick = () => toggleSwitchState('11B');
+            stateGroup.appendChild(btnOK);
+            stateGroup.appendChild(btnBroken);
+            div.appendChild(stateGroup);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'section-title';
+            div.textContent = 'SIGNALS';
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'N4';
+            const signalBtn = document.createElement('button');
+            signalBtn.className = `track-btn ${state.signals['N4']}`;
+            signalBtn.textContent = state.signals['N4'].toUpperCase();
+            signalBtn.onclick = () => cycleSignal('N4');
+            div.appendChild(label);
+            div.appendChild(signalBtn);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'T7';
+            const t7SignalBtn = document.createElement('button');
+            t7SignalBtn.className = `track-btn ${state.signals['T7']}`;
+            t7SignalBtn.textContent = state.signals['T7'].toUpperCase();
+            t7SignalBtn.onclick = () => cycleSignal('T7');
+            div.appendChild(label);
+            div.appendChild(t7SignalBtn);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'S6';
+            const s6SignalBtn = document.createElement('button');
+            s6SignalBtn.className = `track-btn ${state.signals.S6}`;
+            s6SignalBtn.textContent = state.signals.S6.toUpperCase();
+            s6SignalBtn.onclick = () => cycleSignalS6();
+            div.appendChild(label);
+            div.appendChild(s6SignalBtn);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'T5';
+            const t5SignalBtn = document.createElement('button');
+            t5SignalBtn.className = `track-btn ${state.signals.T5}`;
+            t5SignalBtn.textContent = state.signals.T5.toUpperCase();
+            t5SignalBtn.onclick = () => cycleSignalT5();
+            div.appendChild(label);
+            div.appendChild(t5SignalBtn);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'T3';
+            const t3SignalBtn = document.createElement('button');
+            t3SignalBtn.className = `track-btn ${state.signals.T3}`;
+            t3SignalBtn.textContent = state.signals.T3.toUpperCase();
+            t3SignalBtn.onclick = () => cycleSignalT3();
+            div.appendChild(label);
+            div.appendChild(t3SignalBtn);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'section-title';
+            div.textContent = 'HOODS';
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'T5 Hood';
+            btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group';
+            btnEmpty = document.createElement('button');
+            btnEmpty.textContent = 'EMPTY';
+            btnEmpty.className = state.hoods.T5 === 'empty' ? 'active' : '';
+            btnEmpty.onclick = () => {
+                if (state.hoods.T5 !== 'empty') toggleHood('T5');
+            };
+            btnFilled = document.createElement('button');
+            btnFilled.textContent = 'FILLED';
+            btnFilled.className = state.hoods.T5 === 'filled' ? 'active' : '';
+            btnFilled.onclick = () => {
+                if (state.hoods.T5 !== 'filled') toggleHood('T5');
+            };
+            btnGroup.appendChild(btnEmpty);
+            btnGroup.appendChild(btnFilled);
+            div.appendChild(label);
+            div.appendChild(btnGroup);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'S6 Hood';
+            btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group';
+            btnEmpty = document.createElement('button');
+            btnEmpty.textContent = 'EMPTY';
+            btnEmpty.className = state.hoods.S6 === 'empty' ? 'active' : '';
+            btnEmpty.onclick = () => {
+                if (state.hoods.S6 !== 'empty') toggleHood('S6');
+            };
+            btnFilled = document.createElement('button');
+            btnFilled.textContent = 'FILLED';
+            btnFilled.className = state.hoods.S6 === 'filled' ? 'active' : '';
+            btnFilled.onclick = () => {
+                if (state.hoods.S6 !== 'filled') toggleHood('S6');
+            };
+            btnGroup.appendChild(btnEmpty);
+            btnGroup.appendChild(btnFilled);
+            div.appendChild(label);
+            div.appendChild(btnGroup);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'T3 Hood';
+            btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group';
+            btnEmpty = document.createElement('button');
+            btnEmpty.textContent = 'EMPTY';
+            btnEmpty.className = state.hoods.T3 === 'empty' ? 'active' : '';
+            btnEmpty.onclick = () => {
+                if (state.hoods.T3 !== 'empty') toggleHood('T3');
+            };
+            btnFilled = document.createElement('button');
+            btnFilled.textContent = 'FILLED';
+            btnFilled.className = state.hoods.T3 === 'filled' ? 'active' : '';
+            btnFilled.onclick = () => {
+                if (state.hoods.T3 !== 'filled') toggleHood('T3');
+            };
+            btnGroup.appendChild(btnEmpty);
+            btnGroup.appendChild(btnFilled);
+            div.appendChild(label);
+            div.appendChild(btnGroup);
+            container.appendChild(div);
+            div = document.createElement('div');
+            div.className = 'section-title';
+            div.textContent = 'TRACK SECTIONS';
+            container.appendChild(div);
+            ['VA', 'VB', 'VC_LEFT', 'VC_11A', 'VC_RIGHT', 'VD'].forEach(trackName => {
+                if (trackName === 'VC_11A' && state.switches['11A'] === 'NORMAL') return;
+                div = document.createElement('div');
+                div.className = 'track-item';
+                label = document.createElement('div');
+                label.className = 'track-name';
+                label.textContent = trackName.replace(/_/g, ' ');
+                let btn = document.createElement('button');
+                btn.className = `track-btn ${state.tracks[trackName]}`;
+                btn.textContent = state.tracks[trackName].toUpperCase();
+                btn.onclick = () => cycleState(trackName);
+                div.appendChild(label);
+                div.appendChild(btn);
+                container.appendChild(div);
+            });
+            ['AD', 'AC', 'AB_LEFT', 'AB_11B', 'AB_RIGHT', 'AA'].forEach(trackName => {
+                if (trackName === 'AB_11B' && state.switches['11B'] === 'NORMAL') return;
+                div = document.createElement('div');
+                div.className = 'track-item';
+                label = document.createElement('div');
+                label.className = 'track-name';
+                label.textContent = trackName.replace(/_/g, ' ');
+                let btn = document.createElement('button');
+                btn.className = `track-btn ${state.tracks[trackName]}`;
+                btn.textContent = state.tracks[trackName].toUpperCase();
+                btn.onclick = () => cycleState(trackName);
+                div.appendChild(label);
+                div.appendChild(btn);
+                container.appendChild(div);
+            });
+            div = document.createElement('div');
+            div.className = 'track-item';
+            label = document.createElement('div');
+            label.className = 'track-name';
+            label.textContent = 'DIAG';
+            let btn = document.createElement('button');
+            btn.className = `track-btn ${state.tracks['DIAG']}`;
+            btn.textContent = state.tracks['DIAG'].toUpperCase();
+            btn.onclick = () => cycleState('DIAG');
+            div.appendChild(label);
+            div.appendChild(btn);
+            container.appendChild(div);
+        }
+
+        render();
+        initializeEventListeners();
+    </script>
