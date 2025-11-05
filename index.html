@@ -472,21 +472,25 @@
 
             // Calculate positions based on signal position
             if (position === 'between-VA-VB') {
-                poleX = layout.va.end + (layout.vb.start - layout.va.end) / 2;
+                // N4: Align with right border of vertical line between VA-VB
+                poleX = layout.vaVb1X + (CONFIG.triangle.offset - CONFIG.triangle.size) + CONFIG.gap.width;
                 lampX = poleX + CONFIG.signal.armLength;
             } else if (position === 'after-AD') {
-                poleX = layout.ad.end + 32;
+                // T7: Align with left border of vertical line between AD-AC
+                poleX = layout.ad.end;
                 lampX = poleX - CONFIG.signal.armLength;
             } else if (position === 'between-AC-AB') {
                 poleX = layout.vb.end + CONFIG.gap.width + (layout.ab.start - (layout.vb.end + CONFIG.gap.width)) / 2;
                 lampX = poleX;
                 // S6: Set lampY to pole center (will be calculated below)
             } else if (position === 'after-AB') {
-                poleX = layout.ab.rightEnd + 32;
+                // T5: Align with left border of vertical line between AB-AA
+                poleX = layout.ab.end;
                 const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             } else if (position === 'after-VC') {
-                poleX = layout.vc.end + 32;
+                // T3: Align with left border of vertical line between VC-VD
+                poleX = layout.vcVd1X + (CONFIG.triangle.offset - CONFIG.triangle.size);
                 const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             }
@@ -496,7 +500,14 @@
             const poleEndY = track === 'upper' ? y - yOffset : y + yOffset + CONFIG.signal.poleHeight;
             const poleMidY = (poleStartY + poleEndY) / 2;
 
-            if (!lampY) lampY = poleMidY;
+            // N4 and T3 signals should have labels at same level as track labels
+            if (name === 'N4' || name === 'T3') {
+                const trackLabelY = track === 'upper' ? y - CONFIG.label.yOffsetUpper : y + CONFIG.label.yOffsetLower;
+                lampY = trackLabelY + (track === 'upper' ? CONFIG.label.signalYOffset : -CONFIG.label.signalYOffset);
+            } else if (!lampY) {
+                lampY = poleMidY;
+            }
+
             labelX = poleX + (labelSide === 'right' ? CONFIG.label.signalOffset : -CONFIG.label.signalOffset);
             labelY = lampY + (track === 'upper' ? -CONFIG.label.signalYOffset : CONFIG.label.signalYOffset);
 
