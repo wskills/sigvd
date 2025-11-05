@@ -480,11 +480,7 @@
             } else if (position === 'between-AC-AB') {
                 poleX = layout.vb.end + CONFIG.gap.width + (layout.ab.start - (layout.vb.end + CONFIG.gap.width)) / 2;
                 lampX = poleX;
-                // For lower track, calculate lampY based on upward pole position
-                const tempPoleMidY = track === 'upper' ?
-                    y + yOffset + CONFIG.signal.poleHeight / 2 :
-                    y - yOffset - CONFIG.signal.poleHeight / 2;
-                lampY = tempPoleMidY - CONFIG.shunt.symbolOffset;
+                // S6: arm and hood at pole center, no offset
             } else if (position === 'after-AB') {
                 poleX = layout.ab.rightEnd + 32;
                 const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
@@ -645,7 +641,10 @@
             });
 
             // Diagonal
-            let diagX1 = layout.vc.rightStart - CONFIG.diag.offset;
+            // When 11A is REVERSE, connect to END of VC_RIGHT; when NORMAL, connect to START with shortening
+            let diagX1 = state.switches['11A'] === 'REVERSE' ?
+                layout.vc.rightEnd + CONFIG.diag.offset :
+                layout.vc.rightStart - CONFIG.diag.offset;
             let diagY1 = layout.upperY;
             let diagX2 = layout.ab.leftEnd + CONFIG.diag.offset;
             let diagY2 = layout.lowerY;
