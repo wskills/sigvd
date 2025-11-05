@@ -89,7 +89,7 @@
             track: { width: 10, standard: 193, extended: 331, shortened: 161, upperY: 100, lowerY: 250 },
             triangle: { size: 12, gap: 8, offset: 24 },
             signal: { poleWidth: 3, poleHeight: 20, lampRadius: 10, armLength: 20, hoodArmLength: 8,
-                     hoodRadiusMultiplier: 1.3, brokenRingOffset: 4, poleYOffsetTop: 20, poleYOffsetBottom: 40 },
+                     hoodRadiusMultiplier: 1.3, brokenRingOffset: 4, poleYOffsetTop: 40, poleYOffsetBottom: 40 },
             hood: { diagonalGapApex: 5, diagonalGapArc: 7, fillColor: '#0066ff' },
             shunt: { symbolSize: 10, symbolOffset: 10, diagonalLength: 0.8 },
             platform: { width: 100, yOffset: 20, labelOffset: 50 },
@@ -203,7 +203,7 @@
         };
 
         const getSignalColor = (signalState) => {
-            if (state.power === 'off') return 'none';
+            if (state.power === 'off' || signalState === 'off') return 'none';
             return COLORS[signalState] || 'none';
         };
 
