@@ -442,7 +442,7 @@
 
             // Hood
             const hood = drawPath(hoodPath, {
-                fill: state.hoods[name] === 'filled' ? CONFIG.hood.fillColor : 'none',
+                fill: (state.hoods[name] === 'filled' && state.power === 'on') ? CONFIG.hood.fillColor : 'none',
                 stroke: defaultColor(),
                 'stroke-width': '2',
                 'stroke-linejoin': 'miter',
@@ -450,8 +450,8 @@
             });
             hood.onclick = () => toggleHood(name);
 
-            // Diagonal when filled
-            if (state.hoods[name] === 'filled') {
+            // Diagonal when filled (only when power is on)
+            if (state.hoods[name] === 'filled' && state.power === 'on') {
                 drawLine(diagStartX, diagStartY, diagEndX, diagEndY, {
                     stroke: defaultColor(), 'stroke-width': '2'
                 });
@@ -491,13 +491,17 @@
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             }
 
-            // Standard pole positioning (all poles extend downward from track)
-            if (!lampY) lampY = y + yOffset + CONFIG.signal.poleHeight / 2;
+            // Pole positioning: upper track poles extend upward, lower track poles extend downward
+            const poleStartY = track === 'upper' ? y - yOffset - CONFIG.signal.poleHeight : y + yOffset;
+            const poleEndY = track === 'upper' ? y - yOffset : y + yOffset + CONFIG.signal.poleHeight;
+            const poleMidY = (poleStartY + poleEndY) / 2;
+
+            if (!lampY) lampY = poleMidY;
             labelX = poleX + (labelSide === 'right' ? CONFIG.label.signalOffset : -CONFIG.label.signalOffset);
-            labelY = lampY + CONFIG.label.signalYOffset;
+            labelY = lampY + (track === 'upper' ? -CONFIG.label.signalYOffset : CONFIG.label.signalYOffset);
 
             // Pole
-            drawLine(poleX, y + yOffset, poleX, y + yOffset + CONFIG.signal.poleHeight, {
+            drawLine(poleX, poleStartY, poleX, poleEndY, {
                 stroke: defaultColor(), 'stroke-width': CONFIG.signal.poleWidth
             });
 
