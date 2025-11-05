@@ -28,11 +28,7 @@
         .btn-group button { flex: 1; padding: 6px; border: 2px solid #ffffff; font-weight: bold; cursor: pointer; border-radius: 4px; background-color: #333; color: #ffffff; }
         .btn-group button.active { background-color: #0066cc; color: #fff; }
         .section-title { grid-column: 1 / -1; font-weight: bold; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #ffffff; color: #ffffff; }
-        @keyframes flash1Hz {
-            0% { opacity: 1; }
-            50% { opacity: 0; }
-            100% { opacity: 1; }
-        }
+        @keyframes flash1Hz { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
         .broken-ring { animation: flash1Hz 1s infinite; }
         .top-controls { display: flex; gap: 20px; margin-bottom: 30px; align-items: center; justify-content: center; }
         .control-group { display: flex; gap: 15px; align-items: center; }
@@ -80,169 +76,84 @@
 
     <script>
         // ╔══════════════════════════════════════════════════════════════╗
-        // ║           RAILWAY TRACK VISUALIZATION - REFACTORED          ║
-        // ║                   Clean, Maintainable Code                   ║
+        // ║        RAILWAY TRACK VISUALIZATION - SIMPLIFIED             ║
+        // ║              Data-Driven, Maintainable Code                  ║
         // ╚══════════════════════════════════════════════════════════════╝
 
         // ════════════════════════════════════════════════════════════════
-        // 1. CONFIGURATION & CONSTANTS
+        // 1. CONFIGURATION - All dimensions and colors
         // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Main configuration object containing all dimensions and layout constants
-         * @const {Object}
-         */
         const CONFIG = {
-            // Canvas dimensions
-            SVG_WIDTH: 1440,
-            SVG_HEIGHT: 350,
-
-            // Track dimensions
-            TRACK_WIDTH: 10,
-            TRACK_STANDARD_WIDTH: 193,
-            TRACK_EXTENDED_WIDTH: 331,
-            TRACK_SHORTENED_WIDTH: 161,
-
-            // Layout positions
-            TRACK_UPPER_Y: 100,
-            TRACK_LOWER_Y: 250,
-
-            // Triangle/Signal markers
-            TRIANGLE_SIZE: 12,
-            TRIANGLE_GAP: 8,
-            TRIANGLE_OFFSET: 24,
-
-            // Vertical gap lines
-            GAP_LINE_WIDTH: 8,
-            GAP_LINE_HEIGHT: 18,
-
-            // Signal components
-            SIGNAL_POLE_WIDTH: 3,
-            SIGNAL_POLE_HEIGHT: 20,
-            SIGNAL_LAMP_RADIUS: 10,
-            SIGNAL_ARM_LENGTH: 20,
-            SIGNAL_HOOD_ARM_LENGTH: 8,
-            SIGNAL_HOOD_RADIUS_MULTIPLIER: 1.3,
-            SIGNAL_BROKEN_RING_OFFSET: 4,
-
-            // Signal positions
-            SIGNAL_POLE_Y_OFFSET_TOP: 20,
-            SIGNAL_POLE_Y_OFFSET_BOTTOM: 40,
-
-            // Hood decoration
-            HOOD_DIAGONAL_GAP_APEX: 5,
-            HOOD_DIAGONAL_GAP_ARC: 7,
-            HOOD_FILL_COLOR: '#0066ff',
-
-            // Shunt route symbol
-            SHUNT_SYMBOL_SIZE: 10,
-            SHUNT_SYMBOL_OFFSET: 10,
-            SHUNT_SYMBOL_DIAGONAL_LENGTH: 0.8,
-
-            // Platform dimensions
-            PLATFORM_WIDTH: 100,
-            PLATFORM_Y_OFFSET: 20,
-            PLATFORM_LABEL_OFFSET: 50,
-
-            // Switch dimensions
-            SWITCH_SECTION_WIDTH: 40,
-            SWITCH_OVERLAP: 10,
-            SWITCH_NORMAL_SHORTENING: 50,
-            SWITCH_INDICATOR_RADIUS: 8,
-
-            // Diagonal track
-            DIAG_GAP_DISTANCE: 4,
-            DIAG_OFFSET: 2,
-
-            // Label positioning
-            LABEL_Y_OFFSET_UPPER: 30,
-            LABEL_Y_OFFSET_LOWER: 30,
-            LABEL_SIGNAL_OFFSET: 25,
-            LABEL_SIGNAL_Y_OFFSET: 6,
-            LABEL_BG_WIDTH: 30,
-            LABEL_BG_HEIGHT: 18,
-            LABEL_BG_RADIUS: 2,
-            LABEL_END_OFFSET: 50
+            svg: { width: 1440, height: 350 },
+            track: { width: 10, standard: 193, extended: 331, shortened: 161, upperY: 100, lowerY: 250 },
+            triangle: { size: 12, gap: 8, offset: 24 },
+            signal: { poleWidth: 3, poleHeight: 20, lampRadius: 10, armLength: 20, hoodArmLength: 8,
+                     hoodRadiusMultiplier: 1.3, brokenRingOffset: 4, poleYOffsetTop: 20, poleYOffsetBottom: 40 },
+            hood: { diagonalGapApex: 5, diagonalGapArc: 7, fillColor: '#0066ff' },
+            shunt: { symbolSize: 10, symbolOffset: 10, diagonalLength: 0.8 },
+            platform: { width: 100, yOffset: 20, labelOffset: 50 },
+            switch: { sectionWidth: 40, overlap: 10, normalShortening: 50, indicatorRadius: 8 },
+            diag: { gapDistance: 4, offset: 2 },
+            gap: { width: 8, height: 18 },
+            label: { yOffsetUpper: 30, yOffsetLower: 30, signalOffset: 25, signalYOffset: 6,
+                    bgWidth: 30, bgHeight: 18, bgRadius: 2, endOffset: 50 }
         };
 
-        /**
-         * Color definitions for different track and signal states
-         * @const {Object}
-         */
         const COLORS = {
-            OFF: '#ff00ff',      // Magenta
-            WHITE: '#ffffff',
-            GREEN: '#00ff00',
-            RED: '#ff0000',
-            YELLOW: '#ffff00',
-            BLACK: '#000000'
+            off: '#ff00ff', white: '#ffffff', green: '#00ff00',
+            red: '#ff0000', yellow: '#ffff00', black: '#000000'
         };
 
         // ════════════════════════════════════════════════════════════════
-        // 2. STATE MANAGEMENT
+        // 2. DATA MODELS - Define all entities as data
         // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Global application state
-         * @type {Object}
-         */
-        const state = {
-            power: 'on',
-            mode: 'vdu',
-            tracks: {
-                VA: 'white', VB: 'white', VC_LEFT: 'white', VC_11A: 'white', VC_RIGHT: 'white', VD: 'white',
-                AD: 'white', AC: 'white', AB_LEFT: 'white', AB_11B: 'white', AB_RIGHT: 'white', AA: 'white',
-                DIAG: 'white'
-            },
-            signals: {
-                N4: 'off',
-                T7: 'off',
-                S6: 'off',
-                T5: 'off',
-                T3: 'off'
-            },
-            hoods: {
-                T5: 'empty',
-                T3: 'empty',
-                S6: 'empty'
-            },
-            switches: {
-                '11A': 'NORMAL',
-                '11B': 'NORMAL'
-            },
-            switchStates: {
-                '11A': 'OK',
-                '11B': 'OK'
-            }
-        };
+        const TRACKS = [
+            { name: 'VA', line: 'upper' }, { name: 'VB', line: 'upper' }, { name: 'VC_LEFT', line: 'upper' },
+            { name: 'VC_11A', line: 'upper' }, { name: 'VC_RIGHT', line: 'upper' }, { name: 'VD', line: 'upper' },
+            { name: 'AD', line: 'lower' }, { name: 'AC', line: 'lower' }, { name: 'AB_LEFT', line: 'lower' },
+            { name: 'AB_11B', line: 'lower' }, { name: 'AB_RIGHT', line: 'lower' }, { name: 'AA', line: 'lower' },
+            { name: 'DIAG', line: 'diagonal' }
+        ];
 
-        /**
-         * Route selection and logging state
-         * @type {Object}
-         */
-        const routeState = {
-            selectedTriangle: null,
-            routeLog: []
-        };
+        const SIGNALS = [
+            { name: 'N4', type: 'main', hasHood: false, track: 'upper', position: 'between-VA-VB', labelSide: 'left' },
+            { name: 'T7', type: 'main', hasHood: false, track: 'lower', position: 'after-AD', labelSide: 'right' },
+            { name: 'S6', type: 'shunt', hasHood: true, hoodDirection: 'right', track: 'lower', position: 'between-AC-AB', labelSide: 'left' },
+            { name: 'T5', type: 'shunt', hasHood: true, hoodDirection: 'left', track: 'lower', position: 'after-AB', labelSide: 'right' },
+            { name: 'T3', type: 'shunt', hasHood: true, hoodDirection: 'left', track: 'upper', position: 'after-VC', labelSide: 'right' }
+        ];
 
-        // ════════════════════════════════════════════════════════════════
-        // 3. ROUTE VALIDATION
-        // ════════════════════════════════════════════════════════════════
+        const TRIANGLES = [
+            { signal: 'N4', direction: 'Utara Direction', x: 'vaVb1', y: 'upper', orientation: 'right' },
+            { signal: 'N4', direction: 'Selatan Direction', x: 'vaVb2', y: 'upper', orientation: 'left' },
+            { signal: 'T3', direction: 'Utara Direction', x: 'vcVd1', y: 'upper', orientation: 'right' },
+            { signal: 'T3', direction: 'Selatan Direction', x: 'vcVd2', y: 'upper', orientation: 'left' },
+            { signal: 'T7', direction: 'Selatan Direction', x: 'adAc', y: 'lower', orientation: 'left' },
+            { signal: 'T5', direction: 'Selatan Direction', x: 'vcVd2', y: 'lower', orientation: 'left' }
+        ];
 
-        /**
-         * Valid route combinations based on track topology
-         * @const {Object}
-         */
+        const SHUNT_SYMBOLS = [
+            { signal: 'S6', x: 'acAbGap', y: 'aboveGap', flipH: false, flipV: false },
+            { signal: 'T5', x: 'abTriangleGap', y: 'belowGap', flipH: true, flipV: true },
+            { signal: 'T3', x: 'leftOfVcVd', y: 'belowTriangle', flipH: true, flipV: true }
+        ];
+
+        const CONTROL_SECTIONS = [
+            { title: 'POINT MACHINES', type: 'switch', items: ['11A', '11B'] },
+            { title: 'SIGNALS', type: 'signal', items: ['N4', 'T7', 'S6', 'T5', 'T3'] },
+            { title: 'HOODS', type: 'hood', items: ['T5', 'S6', 'T3'] },
+            { title: 'TRACK SECTIONS', type: 'track', items: ['VA', 'VB', 'VC_LEFT', 'VC_11A', 'VC_RIGHT', 'VD',
+                                                               'AD', 'AC', 'AB_LEFT', 'AB_11B', 'AB_RIGHT', 'AA', 'DIAG'] }
+        ];
+
         const VALID_ROUTES = {
             'N4-Utara Direction': ['T3-Utara Direction'],
             'T3-Selatan Direction': ['N4-Selatan Direction', 'T7-Selatan Direction'],
             'T5-Selatan Direction': ['T7-Selatan Direction']
         };
 
-        /**
-         * Error messages for specific invalid routes
-         * @const {Object}
-         */
         const INVALID_ROUTE_MESSAGES = {
             'N4-Selatan Direction|T3-Selatan Direction': 'wrong sequence',
             'T3-Utara Direction|N4-Utara Direction': 'wrong sequence',
@@ -255,1117 +166,597 @@
             'T7-Selatan Direction|T3-Selatan Direction': 'wrong sequence'
         };
 
-        /**
-         * Valid shunt signal connections
-         * @const {Object}
-         */
         const VALID_SHUNT_CONNECTIONS = {
-            'S6': ['T5', 'T3'],
-            'T5': ['S6'],
-            'T3': ['S6']
+            'S6': ['T5', 'T3'], 'T5': ['S6'], 'T3': ['S6']
         };
 
-        /**
-         * Check if a route is valid
-         * @param {string} fromSignal - Starting signal name
-         * @param {string} fromDirection - Starting direction
-         * @param {string} toSignal - Ending signal name
-         * @param {string} toDirection - Ending direction
-         * @returns {boolean} True if route is valid
-         */
-        function isValidRoute(fromSignal, fromDirection, toSignal, toDirection) {
-            const fromKey = `${fromSignal}-${fromDirection}`;
-            const toKey = `${toSignal}-${toDirection}`;
-            return VALID_ROUTES[fromKey]?.includes(toKey) || false;
-        }
+        // ════════════════════════════════════════════════════════════════
+        // 3. STATE MANAGEMENT
+        // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Check if a shunt route connection is valid
-         * @param {string} fromSignal - Starting signal name
-         * @param {string} toSignal - Ending signal name
-         * @returns {boolean} True if shunt route is valid
-         */
-        function isValidShuntRoute(fromSignal, toSignal) {
-            if (fromSignal === toSignal) return false;
-            return VALID_SHUNT_CONNECTIONS[fromSignal]?.includes(toSignal) || false;
-        }
+        const state = {
+            power: 'on',
+            mode: 'vdu',
+            tracks: Object.fromEntries(TRACKS.map(t => [t.name, 'white'])),
+            signals: Object.fromEntries(SIGNALS.map(s => [s.name, 'off'])),
+            hoods: { T5: 'empty', T3: 'empty', S6: 'empty' },
+            switches: { '11A': 'NORMAL', '11B': 'NORMAL' },
+            switchStates: { '11A': 'OK', '11B': 'OK' }
+        };
 
-        /**
-         * Get error message for invalid route
-         * @param {string} fromSignal - Starting signal
-         * @param {string} fromDirection - Starting direction
-         * @param {string} toSignal - Ending signal
-         * @param {string} toDirection - Ending direction
-         * @returns {string} Error message
-         */
-        function getInvalidRouteMessage(fromSignal, fromDirection, toSignal, toDirection) {
-            const routeKey = `${fromSignal}-${fromDirection}|${toSignal}-${toDirection}`;
-            return INVALID_ROUTE_MESSAGES[routeKey] || 'invalid route';
-        }
+        const routeState = { selectedTriangle: null, routeLog: [] };
 
-        /**
-         * Log a route attempt
-         * @param {string} fromSignal - Starting signal
-         * @param {string} fromDirection - Starting direction
-         * @param {string} toSignal - Ending signal
-         * @param {string} toDirection - Ending direction
-         * @param {boolean} isValid - Whether route is valid
-         * @param {string} errorMessage - Error message if invalid
-         */
-        function logRoute(fromSignal, fromDirection, toSignal, toDirection, isValid = true, errorMessage = '') {
-            const routeString = isValid
-                ? `Route set: ${fromSignal} ${fromDirection} --> ${toSignal} ${toDirection}`
-                : `Invalid route: ${fromSignal} ${fromDirection} --> ${toSignal} ${toDirection} (${errorMessage})`;
+        // ════════════════════════════════════════════════════════════════
+        // 4. HELPER FUNCTIONS - Consolidated utilities
+        // ════════════════════════════════════════════════════════════════
 
-            routeState.routeLog.push(routeString);
-            console.log(routeString);
+        const svg = () => document.getElementById('trackSvg');
+        const createElement = (type, attrs) => {
+            const el = document.createElementNS('http://www.w3.org/2000/svg', type);
+            Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+            return el;
+        };
 
-            const logContainer = document.getElementById('routeLog');
-            if (logContainer) {
-                const logEntry = document.createElement('div');
-                logEntry.textContent = routeString;
-                logEntry.style.color = isValid ? '#00ff00' : '#ff0000';
-                logEntry.style.fontFamily = 'monospace';
-                logEntry.style.padding = '5px';
-                logContainer.appendChild(logEntry);
-                logContainer.scrollTop = logContainer.scrollHeight;
+        const getColor = (trackState) => {
+            if (state.power === 'off') return COLORS.off;
+            return COLORS[trackState] || COLORS.off;
+        };
+
+        const getSignalColor = (signalState) => {
+            if (state.power === 'off') return 'none';
+            return COLORS[signalState] || 'none';
+        };
+
+        const defaultColor = () => state.power === 'off' ? COLORS.off : COLORS.white;
+
+        // ════════════════════════════════════════════════════════════════
+        // 5. ROUTE VALIDATION
+        // ════════════════════════════════════════════════════════════════
+
+        const isValidRoute = (from, fromDir, to, toDir) =>
+            VALID_ROUTES[`${from}-${fromDir}`]?.includes(`${to}-${toDir}`) || false;
+
+        const isValidShuntRoute = (from, to) =>
+            from !== to && (VALID_SHUNT_CONNECTIONS[from]?.includes(to) || false);
+
+        const getInvalidRouteMessage = (from, fromDir, to, toDir) =>
+            INVALID_ROUTE_MESSAGES[`${from}-${fromDir}|${to}-${toDir}`] || 'invalid route';
+
+        const logRoute = (from, fromDir, to, toDir, isValid = true, errorMsg = '') => {
+            const text = isValid
+                ? `Route set: ${from} ${fromDir} --> ${to} ${toDir}`
+                : `Invalid route: ${from} ${fromDir} --> ${to} ${toDir} (${errorMsg})`;
+
+            routeState.routeLog.push(text);
+            console.log(text);
+
+            const log = document.getElementById('routeLog');
+            if (log) {
+                const entry = document.createElement('div');
+                entry.textContent = text;
+                entry.style.color = isValid ? COLORS.green : COLORS.red;
+                entry.style.fontFamily = 'monospace';
+                entry.style.padding = '5px';
+                log.appendChild(entry);
+                log.scrollTop = log.scrollHeight;
             }
-        }
+        };
 
-        /**
-         * Handle triangle click for route selection
-         * @param {string} signalName - Signal name
-         * @param {string} direction - Direction
-         */
-        function handleTriangleClick(signalName, direction) {
-            if (state.power === 'off') {
-                console.log('Cannot set routes - system power is OFF');
-                return;
-            }
+        const handleTriangleClick = (signalName, direction) => {
+            if (state.power === 'off') return console.log('Cannot set routes - system power is OFF');
 
             if (!routeState.selectedTriangle) {
                 routeState.selectedTriangle = { signalName, direction, isShunt: false };
                 console.log(`Route origin selected: ${signalName} ${direction}`);
             } else {
                 const from = routeState.selectedTriangle;
-
                 if (from.isShunt) {
-                    logRoute(from.signalName, from.direction, signalName, direction, false, 'Cannot connect shunt route to main route');
+                    logRoute(from.signalName, from.direction, signalName, direction, false,
+                            'Cannot connect shunt route to main route');
+                } else if (isValidRoute(from.signalName, from.direction, signalName, direction)) {
+                    logRoute(from.signalName, from.direction, signalName, direction, true);
                 } else {
-                    if (isValidRoute(from.signalName, from.direction, signalName, direction)) {
-                        logRoute(from.signalName, from.direction, signalName, direction, true);
-                    } else {
-                        const errorMessage = getInvalidRouteMessage(from.signalName, from.direction, signalName, direction);
-                        logRoute(from.signalName, from.direction, signalName, direction, false, errorMessage);
-                    }
+                    logRoute(from.signalName, from.direction, signalName, direction, false,
+                            getInvalidRouteMessage(from.signalName, from.direction, signalName, direction));
                 }
-
                 routeState.selectedTriangle = null;
             }
-        }
+        };
 
-        /**
-         * Handle shunt route click
-         * @param {string} signalName - Signal name
-         * @param {string} routeType - Route type
-         */
-        function handleShuntRouteClick(signalName, routeType) {
-            if (state.power === 'off') {
-                console.log('Cannot set shunt routes - system power is OFF');
-                return;
-            }
+        const handleShuntRouteClick = (signalName, routeType) => {
+            if (state.power === 'off') return console.log('Cannot set shunt routes - system power is OFF');
 
             if (!routeState.selectedTriangle) {
                 routeState.selectedTriangle = { signalName, direction: routeType, isShunt: true };
                 console.log(`Shunt route origin selected: ${signalName} ${routeType}`);
             } else {
                 const from = routeState.selectedTriangle;
-
                 if (from.isShunt && routeType === 'Shunt') {
-                    if (isValidShuntRoute(from.signalName, signalName)) {
-                        logRoute(from.signalName, from.direction, signalName, routeType, true);
-                    } else {
-                        logRoute(from.signalName, from.direction, signalName, routeType, false, `Shunt route ${from.signalName} cannot connect to ${signalName}`);
-                    }
+                    const valid = isValidShuntRoute(from.signalName, signalName);
+                    logRoute(from.signalName, from.direction, signalName, routeType, valid,
+                            valid ? '' : `Shunt route ${from.signalName} cannot connect to ${signalName}`);
                 } else if (!from.isShunt) {
-                    logRoute(from.signalName, from.direction, signalName, routeType, false, 'Cannot connect main route to shunt route');
+                    logRoute(from.signalName, from.direction, signalName, routeType, false,
+                            'Cannot connect main route to shunt route');
                 } else {
-                    logRoute(from.signalName, from.direction, signalName, routeType, false, 'Shunt routes can only connect to other shunt routes');
+                    logRoute(from.signalName, from.direction, signalName, routeType, false,
+                            'Shunt routes can only connect to other shunt routes');
                 }
-
                 routeState.selectedTriangle = null;
             }
-        }
+        };
 
         // ════════════════════════════════════════════════════════════════
-        // 4. COLOR & UTILITY FUNCTIONS
+        // 6. LAYOUT CALCULATIONS
         // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Get color for track state
-         * @param {string} trackState - Track state
-         * @returns {string} Color hex code
-         */
-        function getColor(trackState) {
-            if (state.power === 'off') return COLORS.OFF;
+        const calculateLayout = () => {
+            const { upperY, lowerY, standard, extended, shortened } = CONFIG.track;
+            const { offset, gap, size } = CONFIG.triangle;
 
-            const colorMap = {
-                'green': COLORS.GREEN,
-                'red': COLORS.RED,
-                'yellow': COLORS.YELLOW,
-                'white': COLORS.WHITE,
-                'magenta': COLORS.OFF
+            const totalWidth = standard + 40 + standard + 8 + (extended + 40) + 40 + standard;
+            const startX = (CONFIG.svg.width - totalWidth) / 2;
+
+            // Upper track
+            const va = { start: startX, end: startX + shortened };
+            const vaVb1X = va.end + size;
+            const vaVb2X = va.end + offset + gap + size;
+            const vb = { start: va.end + offset + gap + offset, end: 0 };
+            vb.end = vb.start + standard;
+
+            const vc = { start: vb.end + gap };
+            vc.switch11A = { start: vc.start + extended * 0.75, end: vc.start + extended * 0.75 + CONFIG.switch.sectionWidth };
+            vc.leftEnd = vc.switch11A.start + CONFIG.switch.overlap;
+            vc.rightStart = vc.switch11A.end - CONFIG.switch.overlap;
+            vc.rightEnd = vc.start + extended + CONFIG.switch.sectionWidth;
+            vc.end = vc.rightEnd;
+
+            const vcVd1X = vc.end + size;
+            const vcVd2X = vc.end + offset + gap + size;
+            const vd = { start: vcVd2X + size, end: 0 };
+            vd.end = vd.start + shortened;
+
+            // Lower track
+            const ad = { start: startX, end: startX + standard };
+            const ac = { start: ad.end + offset, end: vb.end };
+
+            const ab = { start: vb.end + gap };
+            const vcRightSize = vc.rightEnd - vc.rightStart;
+            ab.leftEnd = ab.start + vcRightSize + 1;
+            ab.switch11B = { start: ab.leftEnd - CONFIG.switch.overlap, end: ab.leftEnd - CONFIG.switch.overlap + CONFIG.switch.sectionWidth };
+            ab.rightStart = ab.switch11B.end - CONFIG.switch.overlap;
+            ab.rightEnd = ab.start + extended + CONFIG.switch.sectionWidth;
+            ab.triangleGapX = vc.end + offset;
+            ab.end = ab.triangleGapX;
+
+            const aa = { start: vcVd2X + size, end: 0 };
+            aa.end = aa.start + shortened;
+
+            return {
+                upperY, lowerY, startX,
+                va, vb, vc, vd, ad, ac, ab, aa,
+                vaVb1X, vaVb2X, vcVd1X, vcVd2X,
+                middleY: (upperY + lowerY) / 2
             };
-            return colorMap[trackState] || COLORS.OFF;
-        }
-
-        /**
-         * Get color for signal state
-         * @param {string} signalState - Signal state
-         * @returns {string} Color hex code or 'none'
-         */
-        function getSignalColor(signalState) {
-            if (state.power === 'off') return 'none';
-
-            const colorMap = {
-                'green': COLORS.GREEN,
-                'red': COLORS.RED,
-                'yellow': COLORS.YELLOW,
-                'white': COLORS.WHITE
-            };
-            return colorMap[signalState] || 'none';
-        }
-
-        /**
-         * Get default color based on power state
-         * @returns {string} Color hex code
-         */
-        function getDefaultColor() {
-            return state.power === 'off' ? COLORS.OFF : COLORS.WHITE;
-        }
-
-        /**
-         * Get SVG namespace for element creation
-         * @returns {string} SVG namespace URL
-         */
-        function getSVGNamespace() {
-            return 'http://www.w3.org/2000/svg';
-        }
+        };
 
         // ════════════════════════════════════════════════════════════════
-        // 5. SVG DRAWING PRIMITIVES
+        // 7. DRAWING PRIMITIVES
         // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Create SVG element with namespace
-         * @param {string} type - Element type
-         * @returns {SVGElement} Created element
-         */
-        function createSVGElement(type) {
-            return document.createElementNS(getSVGNamespace(), type);
-        }
+        const drawLine = (x1, y1, x2, y2, attrs = {}) =>
+            svg().appendChild(createElement('line', { x1, y1, x2, y2, ...attrs }));
 
-        /**
-         * Set multiple attributes on an element
-         * @param {Element} element - Target element
-         * @param {Object} attributes - Attribute key-value pairs
-         */
-        function setAttributes(element, attributes) {
-            Object.entries(attributes).forEach(([key, value]) => {
-                element.setAttribute(key, value);
-            });
-        }
+        const drawRect = (x, y, width, height, attrs = {}) =>
+            svg().appendChild(createElement('rect', { x, y, width, height, ...attrs }));
 
-        /**
-         * Draw a track section line
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x1 - Start X
-         * @param {number} x2 - End X
-         * @param {number} y - Y position
-         * @param {string} trackName - Track name for state lookup
-         */
-        function drawTrackSection(svg, x1, x2, y, trackName) {
-            const line = createSVGElement('line');
-            setAttributes(line, {
-                x1, y1: y, x2, y2: y,
+        const drawCircle = (cx, cy, r, attrs = {}) =>
+            svg().appendChild(createElement('circle', { cx, cy, r, ...attrs }));
+
+        const drawPath = (d, attrs = {}) =>
+            svg().appendChild(createElement('path', { d, ...attrs }));
+
+        const drawPolygon = (points, attrs = {}) =>
+            svg().appendChild(createElement('polygon', { points, ...attrs }));
+
+        const drawText = (x, y, text, attrs = {}) => {
+            const el = createElement('text', { x, y, 'text-anchor': 'middle', 'font-size': '14',
+                                              'font-weight': 'bold', fill: defaultColor(), ...attrs });
+            el.textContent = text;
+            svg().appendChild(el);
+        };
+
+        // ════════════════════════════════════════════════════════════════
+        // 8. RENDERING COMPONENTS
+        // ════════════════════════════════════════════════════════════════
+
+        const drawTrackSection = (x1, x2, y, trackName) => {
+            drawLine(x1, y, x2, y, {
                 stroke: getColor(state.tracks[trackName]),
-                'stroke-width': CONFIG.TRACK_WIDTH,
+                'stroke-width': CONFIG.track.width,
                 'stroke-linecap': 'butt'
             });
-            svg.appendChild(line);
-        }
+        };
 
-        /**
-         * Draw a text label
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x - X position
-         * @param {number} y - Y position
-         * @param {string} text - Label text
-         */
-        function drawLabel(svg, x, y, text) {
-            const label = createSVGElement('text');
-            setAttributes(label, {
-                x, y,
-                'text-anchor': 'middle',
-                'font-size': '14',
-                'font-weight': 'bold',
-                fill: getDefaultColor()
-            });
-            label.textContent = text;
-            svg.appendChild(label);
-        }
+        const drawTriangle = (x, y, orientation, onClick) => {
+            const s = CONFIG.triangle.size;
+            const points = orientation === 'right'
+                ? `${x-s},${y-s} ${x-s},${y+s} ${x+s},${y}`
+                : `${x+s},${y-s} ${x+s},${y+s} ${x-s},${y}`;
 
-        /**
-         * Draw a vertical gap line
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x - X position
-         * @param {number} y - Y position (center)
-         */
-        function drawVerticalGapLine(svg, x, y) {
-            const rect = createSVGElement('rect');
-            setAttributes(rect, {
-                x,
-                y: y - CONFIG.GAP_LINE_HEIGHT / 2,
-                width: CONFIG.GAP_LINE_WIDTH,
-                height: CONFIG.GAP_LINE_HEIGHT,
-                fill: getDefaultColor(),
-                stroke: 'none'
-            });
-            svg.appendChild(rect);
-        }
-
-        /**
-         * Draw a triangle marker
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x - X position (center)
-         * @param {number} y - Y position
-         * @param {string} direction - 'left' or 'right'
-         * @param {Function} clickHandler - Click handler function
-         */
-        function drawTriangle(svg, x, y, direction, clickHandler) {
-            const size = CONFIG.TRIANGLE_SIZE;
-            const triangle = createSVGElement('polygon');
-
-            const points = direction === 'right'
-                ? `${x - size},${y - size} ${x - size},${y + size} ${x + size},${y}`
-                : `${x + size},${y - size} ${x + size},${y + size} ${x - size},${y}`;
-
-            setAttributes(triangle, {
-                points,
-                fill: state.power === 'off' ? COLORS.OFF : COLORS.WHITE,
-                stroke: getDefaultColor(),
+            const triangle = drawPolygon(points, {
+                fill: state.power === 'off' ? COLORS.off : COLORS.white,
+                stroke: defaultColor(),
                 'stroke-width': '2',
                 cursor: 'pointer'
             });
+            triangle.onclick = onClick;
+            return triangle;
+        };
 
-            triangle.onclick = clickHandler;
-            svg.appendChild(triangle);
-        }
-
-        /**
-         * Draw a shunt route symbol (_\)
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x - X position
-         * @param {number} y - Y position
-         * @param {string} signalName - Signal name
-         * @param {boolean} flipHorizontal - Flip horizontally
-         * @param {boolean} flipVertical - Flip vertically
-         */
-        function drawShuntSymbol(svg, x, y, signalName, flipHorizontal = false, flipVertical = false) {
-            const size = CONFIG.SHUNT_SYMBOL_SIZE;
-            const hDir = flipHorizontal ? -1 : 1;
-            const vDir = flipVertical ? 1 : -1;
-
-            // Horizontal line
-            const horizontal = createSVGElement('line');
-            setAttributes(horizontal, {
-                x1: x,
-                y1: y,
-                x2: x + size * hDir,
-                y2: y,
-                stroke: getDefaultColor(),
-                'stroke-width': '2',
-                'stroke-linecap': 'round',
-                cursor: 'pointer'
-            });
-            horizontal.onclick = () => handleShuntRouteClick(signalName, 'Shunt');
-            svg.appendChild(horizontal);
-
-            // Diagonal line
-            const diagonal = createSVGElement('line');
-            setAttributes(diagonal, {
-                x1: x + size * hDir,
-                y1: y,
-                x2: x + size * hDir / 5,
-                y2: y + size * CONFIG.SHUNT_SYMBOL_DIAGONAL_LENGTH * vDir,
-                stroke: getDefaultColor(),
-                'stroke-width': '2',
-                'stroke-linecap': 'round',
-                cursor: 'pointer'
-            });
-            diagonal.onclick = () => handleShuntRouteClick(signalName, 'Shunt');
-            svg.appendChild(diagonal);
-        }
-
-        /**
-         * Draw a platform
-         * @param {SVGElement} svg - SVG container
-         * @param {number} x - X position
-         * @param {number} topY - Top Y position
-         * @param {number} bottomY - Bottom Y position
-         * @param {string} label - Platform label
-         */
-        function drawPlatform(svg, x, topY, bottomY, label) {
-            const rect = createSVGElement('rect');
-            setAttributes(rect, {
-                x,
-                y: topY,
-                width: CONFIG.PLATFORM_WIDTH,
-                height: bottomY - topY,
-                fill: 'none',
-                stroke: getDefaultColor(),
-                'stroke-width': '2'
-            });
-            svg.appendChild(rect);
-
-            drawLabel(svg, x + CONFIG.PLATFORM_WIDTH / 2, topY + (bottomY - topY) / 2, label);
-        }
-
-        /**
-         * Draw a signal with all components
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} config - Signal configuration
-         */
-        function drawSignal(svg, config) {
-            const {
-                name,
-                poleX,
-                poleYTop,
-                lampX,
-                lampY,
-                labelX,
-                labelY,
-                hasHood = false,
-                hoodConfig = null,
-                cycleHandler
-            } = config;
-
-            // Pole
-            const pole = createSVGElement('line');
-            setAttributes(pole, {
-                x1: poleX, y1: poleYTop,
-                x2: poleX, y2: poleYTop + CONFIG.SIGNAL_POLE_HEIGHT,
-                stroke: getDefaultColor(),
-                'stroke-width': CONFIG.SIGNAL_POLE_WIDTH
-            });
-            svg.appendChild(pole);
-
-            // Lamp or Hood
-            if (hasHood && hoodConfig) {
-                drawSignalWithHood(svg, name, lampX, lampY, poleX, hoodConfig, cycleHandler);
-            } else {
-                // Lamp arm
-                const arm = createSVGElement('line');
-                const armEndX = lampX > poleX ? lampX - CONFIG.SIGNAL_LAMP_RADIUS : lampX + CONFIG.SIGNAL_LAMP_RADIUS;
-                setAttributes(arm, {
-                    x1: poleX, y1: lampY,
-                    x2: armEndX, y2: lampY,
-                    stroke: getDefaultColor(),
-                    'stroke-width': '2'
-                });
-                svg.appendChild(arm);
-
-                // Lamp
-                const lamp = createSVGElement('circle');
-                setAttributes(lamp, {
-                    cx: lampX,
-                    cy: lampY,
-                    r: CONFIG.SIGNAL_LAMP_RADIUS,
-                    fill: state.signals[name] === 'broken' ? 'none' : getSignalColor(state.signals[name]),
-                    stroke: getDefaultColor(),
-                    'stroke-width': '2',
-                    cursor: 'pointer'
-                });
-                lamp.onclick = cycleHandler;
-                svg.appendChild(lamp);
-
-                // Broken indicator
-                if (state.signals[name] === 'broken' && state.power === 'on') {
-                    const brokenRing = createSVGElement('circle');
-                    setAttributes(brokenRing, {
-                        cx: lampX,
-                        cy: lampY,
-                        r: CONFIG.SIGNAL_LAMP_RADIUS + CONFIG.SIGNAL_BROKEN_RING_OFFSET,
-                        fill: 'none',
-                        stroke: COLORS.YELLOW,
-                        'stroke-width': '2',
-                        cursor: 'pointer',
-                        class: 'broken-ring'
-                    });
-                    brokenRing.onclick = cycleHandler;
-                    svg.appendChild(brokenRing);
-                }
-            }
-
-            // Label with background
-            const bgRect = createSVGElement('rect');
-            setAttributes(bgRect, {
-                x: labelX - CONFIG.LABEL_BG_WIDTH / 2,
-                y: labelY - CONFIG.LABEL_BG_HEIGHT / 2 - CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                width: CONFIG.LABEL_BG_WIDTH,
-                height: CONFIG.LABEL_BG_HEIGHT,
-                fill: state.power === 'on' ? COLORS.RED : 'none',
-                rx: CONFIG.LABEL_BG_RADIUS
-            });
-            svg.appendChild(bgRect);
-
-            drawLabel(svg, labelX, labelY, name);
-        }
-
-        /**
-         * Draw signal with hood
-         * @param {SVGElement} svg - SVG container
-         * @param {string} name - Signal name
-         * @param {number} lampX - Lamp X position
-         * @param {number} lampY - Lamp Y position
-         * @param {number} poleX - Pole X position
-         * @param {Object} hoodConfig - Hood configuration
-         * @param {Function} cycleHandler - Cycle handler
-         */
-        function drawSignalWithHood(svg, name, lampX, lampY, poleX, hoodConfig, cycleHandler) {
-            const { direction } = hoodConfig;
-            const radiusX = CONFIG.SIGNAL_POLE_HEIGHT * CONFIG.SIGNAL_HOOD_RADIUS_MULTIPLIER;
-            const radiusY = CONFIG.SIGNAL_POLE_HEIGHT;
+        const drawSignalWithHood = (name, lampX, lampY, poleX, direction, cycleHandler) => {
+            const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
+            const radiusY = CONFIG.signal.poleHeight;
+            const lampR = CONFIG.signal.lampRadius;
 
             let hoodCenterX, hoodCenterY, hoodPath, diagStartX, diagStartY, diagEndX, diagEndY;
 
             if (direction === 'left') {
-                // Hood faces left (T3, T5)
-                hoodCenterX = lampX + CONFIG.SIGNAL_LAMP_RADIUS + radiusX;
-                hoodCenterY = lampY - CONFIG.SIGNAL_LAMP_RADIUS;
-                hoodPath = `M ${hoodCenterX},${hoodCenterY} L ${hoodCenterX - radiusX},${hoodCenterY} A ${radiusX},${radiusY} 0 0,0 ${hoodCenterX},${hoodCenterY + radiusY} Z`;
-
-                // Diagonal line for filled hood
-                diagStartX = hoodCenterX - CONFIG.HOOD_DIAGONAL_GAP_APEX;
-                diagStartY = hoodCenterY + CONFIG.HOOD_DIAGONAL_GAP_APEX;
-                const diagDistance = Math.min(radiusX, radiusY) - CONFIG.HOOD_DIAGONAL_GAP_APEX - CONFIG.HOOD_DIAGONAL_GAP_ARC;
-                diagEndX = diagStartX - diagDistance;
-                diagEndY = diagStartY + diagDistance;
+                hoodCenterX = lampX + lampR + radiusX;
+                hoodCenterY = lampY - lampR;
+                hoodPath = `M ${hoodCenterX},${hoodCenterY} L ${hoodCenterX-radiusX},${hoodCenterY} A ${radiusX},${radiusY} 0 0,0 ${hoodCenterX},${hoodCenterY+radiusY} Z`;
+                diagStartX = hoodCenterX - CONFIG.hood.diagonalGapApex;
+                diagStartY = hoodCenterY + CONFIG.hood.diagonalGapApex;
+                const dist = Math.min(radiusX, radiusY) - CONFIG.hood.diagonalGapApex - CONFIG.hood.diagonalGapArc;
+                diagEndX = diagStartX - dist;
+                diagEndY = diagStartY + dist;
             } else {
-                // Hood faces right (S6)
-                hoodCenterX = poleX + CONFIG.SIGNAL_HOOD_ARM_LENGTH;
-                hoodCenterY = lampY - CONFIG.SIGNAL_LAMP_RADIUS;
-                hoodPath = `M ${hoodCenterX},${hoodCenterY + radiusY} L ${hoodCenterX + radiusX},${hoodCenterY + radiusY} A ${radiusX},${radiusY} 0 0,0 ${hoodCenterX},${hoodCenterY} Z`;
-
-                // Diagonal line for filled hood
-                diagStartX = hoodCenterX + CONFIG.HOOD_DIAGONAL_GAP_APEX;
-                diagStartY = hoodCenterY + radiusY - CONFIG.HOOD_DIAGONAL_GAP_APEX;
-                const diagDistance = Math.min(radiusX, radiusY) - CONFIG.HOOD_DIAGONAL_GAP_APEX - CONFIG.HOOD_DIAGONAL_GAP_ARC;
-                diagEndX = diagStartX + diagDistance;
-                diagEndY = diagStartY - diagDistance;
+                hoodCenterX = poleX + CONFIG.signal.hoodArmLength;
+                hoodCenterY = lampY - lampR;
+                hoodPath = `M ${hoodCenterX},${hoodCenterY+radiusY} L ${hoodCenterX+radiusX},${hoodCenterY+radiusY} A ${radiusX},${radiusY} 0 0,0 ${hoodCenterX},${hoodCenterY} Z`;
+                diagStartX = hoodCenterX + CONFIG.hood.diagonalGapApex;
+                diagStartY = hoodCenterY + radiusY - CONFIG.hood.diagonalGapApex;
+                const dist = Math.min(radiusX, radiusY) - CONFIG.hood.diagonalGapApex - CONFIG.hood.diagonalGapArc;
+                diagEndX = diagStartX + dist;
+                diagEndY = diagStartY - dist;
             }
 
-            // Draw lamp (if not S6)
+            // Lamp (if not S6)
             if (lampX !== poleX) {
-                const lamp = createSVGElement('circle');
-                setAttributes(lamp, {
-                    cx: lampX,
-                    cy: lampY,
-                    r: CONFIG.SIGNAL_LAMP_RADIUS,
+                const lamp = drawCircle(lampX, lampY, lampR, {
                     fill: state.signals[name] === 'broken' ? 'none' : getSignalColor(state.signals[name]),
-                    stroke: getDefaultColor(),
+                    stroke: defaultColor(),
                     'stroke-width': '2',
                     cursor: 'pointer'
                 });
                 lamp.onclick = cycleHandler;
-                svg.appendChild(lamp);
 
-                // Broken indicator
                 if (state.signals[name] === 'broken' && state.power === 'on') {
-                    const brokenRing = createSVGElement('circle');
-                    setAttributes(brokenRing, {
-                        cx: lampX,
-                        cy: lampY,
-                        r: CONFIG.SIGNAL_LAMP_RADIUS + CONFIG.SIGNAL_BROKEN_RING_OFFSET,
-                        fill: 'none',
-                        stroke: COLORS.YELLOW,
-                        'stroke-width': '2',
-                        cursor: 'pointer',
-                        class: 'broken-ring'
+                    const ring = drawCircle(lampX, lampY, lampR + CONFIG.signal.brokenRingOffset, {
+                        fill: 'none', stroke: COLORS.yellow, 'stroke-width': '2',
+                        cursor: 'pointer', class: 'broken-ring'
                     });
-                    brokenRing.onclick = cycleHandler;
-                    svg.appendChild(brokenRing);
+                    ring.onclick = cycleHandler;
                 }
             }
 
             // Hood
-            const hood = createSVGElement('path');
-            setAttributes(hood, {
-                d: hoodPath,
-                fill: state.hoods[name] === 'filled' ? CONFIG.HOOD_FILL_COLOR : 'none',
-                stroke: getDefaultColor(),
+            const hood = drawPath(hoodPath, {
+                fill: state.hoods[name] === 'filled' ? CONFIG.hood.fillColor : 'none',
+                stroke: defaultColor(),
                 'stroke-width': '2',
                 'stroke-linejoin': 'miter',
                 cursor: 'pointer'
             });
             hood.onclick = () => toggleHood(name);
-            svg.appendChild(hood);
 
-            // Diagonal line when filled
+            // Diagonal when filled
             if (state.hoods[name] === 'filled') {
-                const diagLine = createSVGElement('line');
-                setAttributes(diagLine, {
-                    x1: diagStartX, y1: diagStartY,
-                    x2: diagEndX, y2: diagEndY,
-                    stroke: getDefaultColor(),
-                    'stroke-width': '2'
+                drawLine(diagStartX, diagStartY, diagEndX, diagEndY, {
+                    stroke: defaultColor(), 'stroke-width': '2'
                 });
-                svg.appendChild(diagLine);
             }
 
             // Arm
-            const arm = createSVGElement('line');
-            setAttributes(arm, {
-                x1: poleX,
-                y1: lampY,
-                x2: hoodCenterX,
-                y2: lampY,
-                stroke: getDefaultColor(),
-                'stroke-width': '2'
+            drawLine(poleX, lampY, hoodCenterX, lampY, {
+                stroke: defaultColor(), 'stroke-width': '2'
             });
-            svg.appendChild(arm);
-        }
+        };
 
-        /**
-         * Draw switch indicator (broken state)
-         * @param {SVGElement} svg - SVG container
-         * @param {string} switchName - Switch name
-         * @param {number} x - X position
-         * @param {number} y - Y position
-         */
-        function drawSwitchIndicator(svg, switchName, x, y) {
-            if (state.switchStates[switchName] === 'broken' && state.power === 'on') {
-                const circle = createSVGElement('circle');
-                setAttributes(circle, {
-                    cx: x,
-                    cy: y,
-                    r: CONFIG.SWITCH_INDICATOR_RADIUS,
-                    fill: 'none',
-                    stroke: COLORS.YELLOW,
+        const drawSignal = (signal, layout) => {
+            const { name, hasHood, hoodDirection, track, position, labelSide } = signal;
+            const y = track === 'upper' ? layout.upperY : layout.lowerY;
+            const yOffset = track === 'upper' ? CONFIG.signal.poleYOffsetTop : CONFIG.signal.poleYOffsetBottom;
+
+            let poleX, lampX, lampY, labelX, labelY;
+
+            // Calculate positions based on signal position
+            if (position === 'between-VA-VB') {
+                poleX = layout.va.end + (layout.vb.start - layout.va.end) / 2;
+                lampX = poleX + CONFIG.signal.armLength;
+            } else if (position === 'after-AD') {
+                poleX = layout.ad.end + 32;
+                lampX = poleX - CONFIG.signal.armLength;
+            } else if (position === 'between-AC-AB') {
+                poleX = layout.vb.end + CONFIG.gap.width + (layout.ab.start - (layout.vb.end + CONFIG.gap.width)) / 2;
+                lampX = poleX;
+                // S6: arm and hood at pole center, no offset
+            } else if (position === 'after-AB') {
+                poleX = layout.ab.rightEnd + 32;
+                const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
+                lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
+            } else if (position === 'after-VC') {
+                poleX = layout.vc.end + 32;
+                const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
+                lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
+            }
+
+            // Calculate pole positions based on track (upper poles go down, lower poles go up)
+            const poleStartY = track === 'upper' ? y + yOffset : y - yOffset - CONFIG.signal.poleHeight;
+            const poleEndY = track === 'upper' ? y + yOffset + CONFIG.signal.poleHeight : y - yOffset;
+            const poleMidY = (poleStartY + poleEndY) / 2;
+
+            if (!lampY) lampY = poleMidY;
+            labelX = poleX + (labelSide === 'right' ? CONFIG.label.signalOffset : -CONFIG.label.signalOffset);
+            labelY = (position === 'between-AC-AB' ? lampY : poleMidY) + CONFIG.label.signalYOffset;
+
+            // Pole
+            drawLine(poleX, poleStartY, poleX, poleEndY, {
+                stroke: defaultColor(), 'stroke-width': CONFIG.signal.poleWidth
+            });
+
+            // Lamp or Hood
+            if (hasHood) {
+                drawSignalWithHood(name, lampX, lampY, poleX, hoodDirection, () => cycleSignal(name));
+            } else {
+                const armEndX = lampX > poleX ? lampX - CONFIG.signal.lampRadius : lampX + CONFIG.signal.lampRadius;
+                drawLine(poleX, lampY, armEndX, lampY, { stroke: defaultColor(), 'stroke-width': '2' });
+
+                const lamp = drawCircle(lampX, lampY, CONFIG.signal.lampRadius, {
+                    fill: state.signals[name] === 'broken' ? 'none' : getSignalColor(state.signals[name]),
+                    stroke: defaultColor(),
                     'stroke-width': '2',
-                    cursor: 'pointer',
-                    class: 'broken-ring'
+                    cursor: 'pointer'
                 });
-                circle.onclick = () => toggleSwitchState(switchName);
-                svg.appendChild(circle);
+                lamp.onclick = () => cycleSignal(name);
+
+                if (state.signals[name] === 'broken' && state.power === 'on') {
+                    const ring = drawCircle(lampX, lampY, CONFIG.signal.lampRadius + CONFIG.signal.brokenRingOffset, {
+                        fill: 'none', stroke: COLORS.yellow, 'stroke-width': '2',
+                        cursor: 'pointer', class: 'broken-ring'
+                    });
+                    ring.onclick = () => cycleSignal(name);
+                }
             }
-        }
 
-        // ════════════════════════════════════════════════════════════════
-        // 6. MAIN TRACK RENDERING
-        // ════════════════════════════════════════════════════════════════
+            // Label with background
+            drawRect(labelX - CONFIG.label.bgWidth/2, labelY - CONFIG.label.bgHeight/2 - CONFIG.label.signalYOffset,
+                    CONFIG.label.bgWidth, CONFIG.label.bgHeight, {
+                fill: state.power === 'on' ? COLORS.red : 'none',
+                rx: CONFIG.label.bgRadius
+            });
+            drawText(labelX, labelY, name);
+        };
 
-        /**
-         * Calculate track layout positions
-         * @returns {Object} Layout positions and dimensions
-         */
-        function calculateTrackLayout() {
-            const upperY = CONFIG.TRACK_UPPER_Y;
-            const lowerY = CONFIG.TRACK_LOWER_Y;
-            const standardWidth = CONFIG.TRACK_STANDARD_WIDTH;
-            const extendedWidth = CONFIG.TRACK_EXTENDED_WIDTH;
+        const drawShuntSymbol = (symbol, layout) => {
+            const { signal, x: xKey, y: yKey, flipH, flipV } = symbol;
+            const size = CONFIG.shunt.symbolSize;
+            const hDir = flipH ? -1 : 1;
+            const vDir = flipV ? 1 : -1;
 
-            const totalTrackWidth = standardWidth + 40 + standardWidth + 8 + (extendedWidth + 40) + 40 + standardWidth;
-            const startX = (CONFIG.SVG_WIDTH - totalTrackWidth) / 2;
+            let x, y;
+            if (xKey === 'acAbGap') {
+                x = layout.vb.end + CONFIG.gap.width;
+                y = layout.lowerY - CONFIG.gap.height/2 - CONFIG.shunt.symbolOffset;
+            } else if (xKey === 'abTriangleGap') {
+                x = layout.vcVd1X + (CONFIG.triangle.offset - CONFIG.triangle.size);
+                y = layout.lowerY + CONFIG.gap.height/2 + CONFIG.shunt.symbolOffset;
+            } else if (xKey === 'leftOfVcVd') {
+                x = layout.vcVd1X - CONFIG.triangle.size;
+                y = layout.upperY + CONFIG.triangle.size + CONFIG.shunt.symbolOffset;
+            }
 
-            // Upper track positions
-            const vaWidth = CONFIG.TRACK_SHORTENED_WIDTH;
-            const vaEnd = startX + vaWidth;
-
-            const vaVbTriangle1X = vaEnd + CONFIG.TRIANGLE_SIZE;
-            const vaVbTriangle2X = vaEnd + CONFIG.TRIANGLE_OFFSET + CONFIG.TRIANGLE_GAP + CONFIG.TRIANGLE_SIZE;
-
-            const vbStart = vaEnd + CONFIG.TRIANGLE_OFFSET + CONFIG.TRIANGLE_GAP + CONFIG.TRIANGLE_OFFSET;
-            const vbEnd = vbStart + standardWidth;
-
-            const vcStart = vbEnd + CONFIG.TRIANGLE_GAP;
-            const vc11AStart = vcStart + extendedWidth * 0.75;
-            const vc11AEnd = vc11AStart + CONFIG.SWITCH_SECTION_WIDTH;
-            const vcLeftEnd = vc11AStart + CONFIG.SWITCH_OVERLAP;
-            const vcRightStart = vc11AEnd - CONFIG.SWITCH_OVERLAP;
-            const vcRightEnd = vcStart + extendedWidth + CONFIG.SWITCH_SECTION_WIDTH;
-            const vcEnd = vcRightEnd;
-
-            const vcVdTriangle1X = vcEnd + CONFIG.TRIANGLE_SIZE;
-            const vcVdTriangle2X = vcEnd + CONFIG.TRIANGLE_OFFSET + CONFIG.TRIANGLE_GAP + CONFIG.TRIANGLE_SIZE;
-
-            const vdStart = vcVdTriangle2X + CONFIG.TRIANGLE_SIZE;
-            const vdWidth = CONFIG.TRACK_SHORTENED_WIDTH;
-            const vdEnd = vdStart + vdWidth;
-
-            // Lower track positions
-            const adEnd = startX + standardWidth;
-            const acStart = adEnd + CONFIG.TRIANGLE_OFFSET;
-            const acEnd = vbEnd;
-
-            const abStart = vbEnd + CONFIG.TRIANGLE_GAP;
-            const vcRightSize = vcRightEnd - vcRightStart;
-            const abLeftEnd = abStart + vcRightSize + 1;
-            const ab11BStart = abLeftEnd - CONFIG.SWITCH_OVERLAP;
-            const ab11BEnd = ab11BStart + CONFIG.SWITCH_SECTION_WIDTH;
-            const abRightStart = ab11BEnd - CONFIG.SWITCH_OVERLAP;
-            const abRightEnd = abStart + extendedWidth + CONFIG.SWITCH_SECTION_WIDTH;
-            const abTriangleGapX = vcEnd + CONFIG.TRIANGLE_OFFSET;
-            const abEnd = abTriangleGapX;
-
-            const aaStart = vcVdTriangle2X + CONFIG.TRIANGLE_SIZE;
-            const aaWidth = CONFIG.TRACK_SHORTENED_WIDTH;
-            const aaEnd = aaStart + aaWidth;
-
-            return {
-                upperY, lowerY, startX,
-                va: { start: startX, end: vaEnd, width: vaWidth },
-                vb: { start: vbStart, end: vbEnd },
-                vc: { start: vcStart, end: vcEnd, leftEnd: vcLeftEnd, rightStart: vcRightStart, rightEnd: vcRightEnd, switch11A: { start: vc11AStart, end: vc11AEnd } },
-                vd: { start: vdStart, end: vdEnd, width: vdWidth },
-                ad: { start: startX, end: adEnd },
-                ac: { start: acStart, end: acEnd },
-                ab: { start: abStart, end: abEnd, leftEnd: abLeftEnd, rightStart: abRightStart, rightEnd: abRightEnd, switch11B: { start: ab11BStart, end: ab11BEnd }, triangleGapX: abTriangleGapX },
-                aa: { start: aaStart, end: aaEnd, width: aaWidth },
-                triangles: {
-                    vaVb: { triangle1X: vaVbTriangle1X, triangle2X: vaVbTriangle2X },
-                    vcVd: { triangle1X: vcVdTriangle1X, triangle2X: vcVdTriangle2X }
-                },
-                vcRightSize
+            const drawSymLine = (x1, y1, x2, y2) => {
+                const line = drawLine(x1, y1, x2, y2, {
+                    stroke: defaultColor(), 'stroke-width': '2',
+                    'stroke-linecap': 'round', cursor: 'pointer'
+                });
+                line.onclick = () => handleShuntRouteClick(signal, 'Shunt');
+                return line;
             };
-        }
 
-        /**
-         * Draw upper track line (VA, VB, VC, VD)
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawUpperTrack(svg, layout) {
-            const { upperY, va, vb, vc, vd } = layout;
+            drawSymLine(x, y, x + size * hDir, y);
+            drawSymLine(x + size * hDir, y, x + size * hDir / 5, y + size * CONFIG.shunt.diagonalLength * vDir);
+        };
 
-            // VA
-            drawTrackSection(svg, va.start, va.end, upperY, 'VA');
-            drawLabel(svg, va.start + va.width / 2, upperY - CONFIG.LABEL_Y_OFFSET_UPPER, 'VA');
+        // ════════════════════════════════════════════════════════════════
+        // 9. MAIN RENDERING
+        // ════════════════════════════════════════════════════════════════
 
-            // VB
-            drawTrackSection(svg, vb.start, vb.end, upperY, 'VB');
-            drawLabel(svg, vb.start + (vb.end - vb.start) / 2, upperY - CONFIG.LABEL_Y_OFFSET_UPPER, 'VB');
+        const drawTrack = () => {
+            svg().innerHTML = '';
+            drawRect(0, 0, CONFIG.svg.width, CONFIG.svg.height, { fill: COLORS.black });
 
-            // VC (with switch handling)
+            const layout = calculateLayout();
+
+            // Upper tracks
+            drawTrackSection(layout.va.start, layout.va.end, layout.upperY, 'VA');
+            drawText(layout.va.start + (layout.va.end - layout.va.start)/2, layout.upperY - CONFIG.label.yOffsetUpper, 'VA');
+
+            drawTrackSection(layout.vb.start, layout.vb.end, layout.upperY, 'VB');
+            drawText(layout.vb.start + (layout.vb.end - layout.vb.start)/2, layout.upperY - CONFIG.label.yOffsetUpper, 'VB');
+
+            // VC with switch logic
             if (state.switches['11A'] === 'NORMAL') {
-                drawTrackSection(svg, vc.start, vc.rightEnd, upperY, 'VC_LEFT');
+                drawTrackSection(layout.vc.start, layout.vc.rightEnd, layout.upperY, 'VC_LEFT');
             } else {
-                drawTrackSection(svg, vc.start, vc.leftEnd, upperY, 'VC_LEFT');
-                drawTrackSection(svg, vc.rightStart, vc.rightEnd, upperY, 'VC_RIGHT');
+                drawTrackSection(layout.vc.start, layout.vc.leftEnd, layout.upperY, 'VC_LEFT');
+                drawTrackSection(layout.vc.rightStart, layout.vc.rightEnd, layout.upperY, 'VC_RIGHT');
             }
-            drawLabel(svg, vc.start + 60, upperY - CONFIG.LABEL_Y_OFFSET_UPPER, 'VC');
-            drawLabel(svg, vc.switch11A.start + 20, upperY - CONFIG.LABEL_Y_OFFSET_UPPER, '11A');
+            drawText(layout.vc.start + 60, layout.upperY - CONFIG.label.yOffsetUpper, 'VC');
+            drawText(layout.vc.switch11A.start + 20, layout.upperY - CONFIG.label.yOffsetUpper, '11A');
 
-            // VD
-            drawTrackSection(svg, vd.start, vd.end, upperY, 'VD');
-            drawLabel(svg, vd.start + vd.width / 2, upperY - CONFIG.LABEL_Y_OFFSET_UPPER, 'VD');
-        }
+            drawTrackSection(layout.vd.start, layout.vd.end, layout.upperY, 'VD');
+            drawText(layout.vd.start + (layout.vd.end - layout.vd.start)/2, layout.upperY - CONFIG.label.yOffsetUpper, 'VD');
 
-        /**
-         * Draw lower track line (AD, AC, AB, AA)
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawLowerTrack(svg, layout) {
-            const { lowerY, ad, ac, ab, aa } = layout;
+            // Lower tracks
+            drawTrackSection(layout.ad.start, layout.ad.end, layout.lowerY, 'AD');
+            drawText(layout.ad.start + (layout.ad.end - layout.ad.start)/2, layout.lowerY + CONFIG.label.yOffsetLower, 'AD');
 
-            // AD
-            drawTrackSection(svg, ad.start, ad.end, lowerY, 'AD');
-            drawLabel(svg, ad.start + (ad.end - ad.start) / 2, lowerY + CONFIG.LABEL_Y_OFFSET_LOWER, 'AD');
+            drawTrackSection(layout.ac.start, layout.ac.end, layout.lowerY, 'AC');
+            drawText(layout.ac.start + (layout.ac.end - layout.ac.start)/2, layout.lowerY + CONFIG.label.yOffsetLower, 'AC');
 
-            // AC
-            drawTrackSection(svg, ac.start, ac.end, lowerY, 'AC');
-            const acMidpoint = ac.start + (ac.end - ac.start) / 2;
-            drawLabel(svg, acMidpoint, lowerY + CONFIG.LABEL_Y_OFFSET_LOWER, 'AC');
-
-            // AB (with switch handling)
+            // AB with switch logic
             if (state.switches['11B'] === 'NORMAL') {
-                drawTrackSection(svg, ab.start, ab.triangleGapX, lowerY, 'AB_LEFT');
+                drawTrackSection(layout.ab.start, layout.ab.triangleGapX, layout.lowerY, 'AB_LEFT');
             } else {
-                drawTrackSection(svg, ab.start, ab.leftEnd, lowerY, 'AB_LEFT');
-                drawTrackSection(svg, ab.rightStart, ab.triangleGapX, lowerY, 'AB_RIGHT');
+                drawTrackSection(layout.ab.start, layout.ab.leftEnd, layout.lowerY, 'AB_LEFT');
+                drawTrackSection(layout.ab.rightStart, layout.ab.triangleGapX, layout.lowerY, 'AB_RIGHT');
             }
-            drawLabel(svg, ab.rightEnd - 60, lowerY + CONFIG.LABEL_Y_OFFSET_LOWER, 'AB');
-            drawLabel(svg, ab.switch11B.start + 20, lowerY + CONFIG.LABEL_Y_OFFSET_LOWER, '11B');
+            drawText(layout.ab.rightEnd - 60, layout.lowerY + CONFIG.label.yOffsetLower, 'AB');
+            drawText(layout.ab.switch11B.start + 20, layout.lowerY + CONFIG.label.yOffsetLower, '11B');
 
-            // AA
-            drawTrackSection(svg, aa.start, aa.end, lowerY, 'AA');
-            drawLabel(svg, aa.start + aa.width / 2, lowerY + CONFIG.LABEL_Y_OFFSET_LOWER, 'AA');
-        }
+            drawTrackSection(layout.aa.start, layout.aa.end, layout.lowerY, 'AA');
+            drawText(layout.aa.start + (layout.aa.end - layout.aa.start)/2, layout.lowerY + CONFIG.label.yOffsetLower, 'AA');
 
-        /**
-         * Draw vertical gap lines
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawGapLines(svg, layout) {
-            const { upperY, lowerY, vb, triangles } = layout;
-
-            // Upper track gaps
-            drawVerticalGapLine(svg, triangles.vaVb.triangle1X + (CONFIG.TRIANGLE_OFFSET - CONFIG.TRIANGLE_SIZE), upperY);
-            drawVerticalGapLine(svg, vb.end, upperY);
-            drawVerticalGapLine(svg, triangles.vcVd.triangle1X + (CONFIG.TRIANGLE_OFFSET - CONFIG.TRIANGLE_SIZE), upperY);
-
-            // Lower track gaps
-            drawVerticalGapLine(svg, triangles.vaVb.triangle1X + (CONFIG.TRIANGLE_OFFSET - CONFIG.TRIANGLE_SIZE), lowerY);
-            drawVerticalGapLine(svg, vb.end, lowerY);
-            drawVerticalGapLine(svg, triangles.vcVd.triangle1X + (CONFIG.TRIANGLE_OFFSET - CONFIG.TRIANGLE_SIZE), lowerY);
-        }
-
-        /**
-         * Draw all triangles
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawTriangles(svg, layout) {
-            const { upperY, lowerY, ad, triangles } = layout;
-
-            // VA-VB triangles
-            drawTriangle(svg, triangles.vaVb.triangle1X, upperY, 'right', () => handleTriangleClick('N4', 'Utara Direction'));
-            drawTriangle(svg, triangles.vaVb.triangle2X, upperY, 'left', () => handleTriangleClick('N4', 'Selatan Direction'));
-
-            // VC-VD triangles
-            drawTriangle(svg, triangles.vcVd.triangle1X, upperY, 'right', () => handleTriangleClick('T3', 'Utara Direction'));
-            drawTriangle(svg, triangles.vcVd.triangle2X, upperY, 'left', () => handleTriangleClick('T3', 'Selatan Direction'));
-
-            // AD-AC triangle
-            drawTriangle(svg, ad.end + CONFIG.TRIANGLE_SIZE, lowerY, 'left', () => handleTriangleClick('T7', 'Selatan Direction'));
-
-            // AB-AA triangle
-            drawTriangle(svg, triangles.vcVd.triangle2X, lowerY, 'left', () => handleTriangleClick('T5', 'Selatan Direction'));
-        }
-
-        /**
-         * Draw all signals
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawSignals(svg, layout) {
-            const { upperY, lowerY, va, vb, vc, ad, ab, triangles } = layout;
-
-            // N4 - between VA and VB
-            const n4PoleX = va.end + (vb.start - va.end) / 2;
-            drawSignal(svg, {
-                name: 'N4',
-                poleX: n4PoleX,
-                poleYTop: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP,
-                lampX: n4PoleX + CONFIG.SIGNAL_ARM_LENGTH,
-                lampY: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP + CONFIG.SIGNAL_POLE_HEIGHT / 2,
-                labelX: n4PoleX - CONFIG.LABEL_SIGNAL_OFFSET,
-                labelY: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP + CONFIG.SIGNAL_POLE_HEIGHT / 2 + CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                cycleHandler: () => cycleSignal('N4')
+            // Gaps
+            [layout.vaVb1X + (CONFIG.triangle.offset - CONFIG.triangle.size),
+             layout.vb.end,
+             layout.vcVd1X + (CONFIG.triangle.offset - CONFIG.triangle.size)].forEach(x => {
+                drawRect(x, layout.upperY - CONFIG.gap.height/2, CONFIG.gap.width, CONFIG.gap.height,
+                        { fill: defaultColor(), stroke: 'none' });
+                drawRect(x, layout.lowerY - CONFIG.gap.height/2, CONFIG.gap.width, CONFIG.gap.height,
+                        { fill: defaultColor(), stroke: 'none' });
             });
 
-            // T3 - between VC and VD (with hood)
-            const t3PoleX = vc.end + 32;
-            const t3LampX = t3PoleX - CONFIG.SIGNAL_HOOD_ARM_LENGTH - CONFIG.SIGNAL_POLE_HEIGHT * CONFIG.SIGNAL_HOOD_RADIUS_MULTIPLIER - CONFIG.SIGNAL_LAMP_RADIUS;
-            drawSignal(svg, {
-                name: 'T3',
-                poleX: t3PoleX,
-                poleYTop: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP,
-                lampX: t3LampX,
-                lampY: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP + CONFIG.SIGNAL_POLE_HEIGHT / 2,
-                labelX: t3PoleX + CONFIG.LABEL_SIGNAL_OFFSET,
-                labelY: CONFIG.SIGNAL_POLE_Y_OFFSET_TOP + CONFIG.SIGNAL_POLE_HEIGHT / 2 + CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                hasHood: true,
-                hoodConfig: { direction: 'left' },
-                cycleHandler: () => cycleSignalT3()
+            // Triangles
+            TRIANGLES.forEach(t => {
+                const x = t.x === 'vaVb1' ? layout.vaVb1X :
+                         t.x === 'vaVb2' ? layout.vaVb2X :
+                         t.x === 'vcVd1' ? layout.vcVd1X :
+                         t.x === 'vcVd2' ? layout.vcVd2X :
+                         t.x === 'adAc' ? layout.ad.end + CONFIG.triangle.size : 0;
+                const y = t.y === 'upper' ? layout.upperY : layout.lowerY;
+                drawTriangle(x, y, t.orientation, () => handleTriangleClick(t.signal, t.direction));
             });
 
-            // T7 - between AD and AC
-            const t7PoleX = ad.end + 32;
-            drawSignal(svg, {
-                name: 'T7',
-                poleX: t7PoleX,
-                poleYTop: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM,
-                lampX: t7PoleX - CONFIG.SIGNAL_ARM_LENGTH,
-                lampY: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM + CONFIG.SIGNAL_POLE_HEIGHT / 2,
-                labelX: t7PoleX + CONFIG.LABEL_SIGNAL_OFFSET,
-                labelY: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM + CONFIG.SIGNAL_POLE_HEIGHT / 2 + CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                cycleHandler: () => cycleSignal('T7')
-            });
+            // Diagonal
+            // When 11A is REVERSE, connect to END of VC_RIGHT; when NORMAL, connect to START with shortening
+            let diagX1 = state.switches['11A'] === 'REVERSE' ?
+                layout.vc.rightEnd + CONFIG.diag.offset :
+                layout.vc.rightStart - CONFIG.diag.offset;
+            let diagY1 = layout.upperY;
+            let diagX2 = layout.ab.leftEnd + CONFIG.diag.offset;
+            let diagY2 = layout.lowerY;
 
-            // S6 - between AC and AB (hood only, no lamp)
-            const s6PoleX = vb.end + CONFIG.GAP_LINE_WIDTH + (ab.start - (vb.end + CONFIG.GAP_LINE_WIDTH)) / 2;
-            const s6LampY = lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM + CONFIG.SIGNAL_POLE_HEIGHT / 2 - CONFIG.SHUNT_SYMBOL_OFFSET;
-            drawSignal(svg, {
-                name: 'S6',
-                poleX: s6PoleX,
-                poleYTop: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM,
-                lampX: s6PoleX,
-                lampY: s6LampY,
-                labelX: s6PoleX - CONFIG.LABEL_SIGNAL_OFFSET,
-                labelY: s6LampY + CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                hasHood: true,
-                hoodConfig: { direction: 'right' },
-                cycleHandler: () => cycleSignalS6()
-            });
+            const dx = diagX2 - diagX1, dy = diagY2 - diagY1;
+            const len = Math.sqrt(dx*dx + dy*dy);
+            const ux = dx / len, uy = dy / len;
 
-            // T5 - between AB and AA (with hood)
-            const t5PoleX = ab.rightEnd + 32;
-            const t5LampX = t5PoleX - CONFIG.SIGNAL_HOOD_ARM_LENGTH - CONFIG.SIGNAL_POLE_HEIGHT * CONFIG.SIGNAL_HOOD_RADIUS_MULTIPLIER - CONFIG.SIGNAL_LAMP_RADIUS;
-            drawSignal(svg, {
-                name: 'T5',
-                poleX: t5PoleX,
-                poleYTop: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM,
-                lampX: t5LampX,
-                lampY: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM + CONFIG.SIGNAL_POLE_HEIGHT / 2,
-                labelX: t5PoleX + CONFIG.LABEL_SIGNAL_OFFSET,
-                labelY: lowerY + CONFIG.SIGNAL_POLE_Y_OFFSET_BOTTOM + CONFIG.SIGNAL_POLE_HEIGHT / 2 + CONFIG.LABEL_SIGNAL_Y_OFFSET,
-                hasHood: true,
-                hoodConfig: { direction: 'left' },
-                cycleHandler: () => cycleSignalT5()
-            });
-        }
-
-        /**
-         * Draw shunt symbols
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawShuntSymbols(svg, layout) {
-            const { upperY, lowerY, vb, vc, triangles } = layout;
-
-            // S6 shunt symbol (above AC-AB vertical line)
-            const s6SymbolX = vb.end + CONFIG.GAP_LINE_WIDTH;
-            const s6SymbolY = lowerY - CONFIG.GAP_LINE_HEIGHT / 2 - CONFIG.SHUNT_SYMBOL_OFFSET;
-            drawShuntSymbol(svg, s6SymbolX, s6SymbolY, 'S6', false, false);
-
-            // T5 shunt symbol (below AB-Triangle vertical line)
-            const t5SymbolX = triangles.vcVd.triangle1X + (CONFIG.TRIANGLE_OFFSET - CONFIG.TRIANGLE_SIZE);
-            const t5SymbolY = lowerY + CONFIG.GAP_LINE_HEIGHT / 2 + CONFIG.SHUNT_SYMBOL_OFFSET;
-            drawShuntSymbol(svg, t5SymbolX, t5SymbolY, 'T5', true, true);
-
-            // T3 shunt symbol (below VC-VD left triangle)
-            const t3SymbolX = triangles.vcVd.triangle1X - CONFIG.TRIANGLE_SIZE;
-            const t3SymbolY = upperY + CONFIG.TRIANGLE_SIZE + CONFIG.SHUNT_SYMBOL_OFFSET;
-            drawShuntSymbol(svg, t3SymbolX, t3SymbolY, 'T3', true, true);
-        }
-
-        /**
-         * Draw platforms
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawPlatforms(svg, layout) {
-            const { upperY, lowerY, va, vd } = layout;
-
-            const platformTopY = upperY + CONFIG.PLATFORM_Y_OFFSET;
-            const platformBottomY = lowerY - CONFIG.PLATFORM_Y_OFFSET;
-
-            // Platform B (between VA and AD)
-            const platformBX = va.start + va.width / 2 - CONFIG.PLATFORM_LABEL_OFFSET;
-            drawPlatform(svg, platformBX, platformTopY, platformBottomY, 'Platform B');
-
-            // Platform A (between VD and AA)
-            const platformAX = vd.start + vd.width / 2 - CONFIG.PLATFORM_LABEL_OFFSET;
-            drawPlatform(svg, platformAX, platformTopY, platformBottomY, 'Platform A');
-        }
-
-        /**
-         * Draw diagonal track
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawDiagonal(svg, layout) {
-            const { upperY, lowerY, vc, ab } = layout;
-
-            // Calculate diagonal endpoints
-            let diagX1 = vc.rightStart - CONFIG.DIAG_OFFSET;
-            let diagY1 = upperY;
-            let diagX2 = ab.leftEnd + CONFIG.DIAG_OFFSET;
-            let diagY2 = lowerY;
-
-            // Calculate diagonal vector
-            const diagDx = diagX2 - diagX1;
-            const diagDy = diagY2 - diagY1;
-            const diagLength = Math.sqrt(diagDx * diagDx + diagDy * diagDy);
-            const diagUx = diagDx / diagLength;
-            const diagUy = diagDy / diagLength;
-
-            // Adjust for switch states
             if (state.switches['11A'] === 'NORMAL') {
-                diagX1 += diagUx * CONFIG.SWITCH_NORMAL_SHORTENING;
-                diagY1 += diagUy * CONFIG.SWITCH_NORMAL_SHORTENING;
+                diagX1 += ux * CONFIG.switch.normalShortening;
+                diagY1 += uy * CONFIG.switch.normalShortening;
             }
             if (state.switches['11B'] === 'NORMAL') {
-                diagX2 -= diagUx * CONFIG.SWITCH_NORMAL_SHORTENING;
-                diagY2 -= diagUy * CONFIG.SWITCH_NORMAL_SHORTENING;
+                diagX2 -= ux * CONFIG.switch.normalShortening;
+                diagY2 -= uy * CONFIG.switch.normalShortening;
             }
 
-            // Calculate midpoint with gap
-            const diagMidX = (diagX1 + diagX2) / 2;
-            const diagMidY = (diagY1 + diagY2) / 2;
-            const diagSplit1X2 = diagMidX - diagUx * CONFIG.DIAG_GAP_DISTANCE;
-            const diagSplit1Y2 = diagMidY - diagUy * CONFIG.DIAG_GAP_DISTANCE;
-            const diagSplit2X1 = diagMidX + diagUx * CONFIG.DIAG_GAP_DISTANCE;
-            const diagSplit2Y1 = diagMidY + diagUy * CONFIG.DIAG_GAP_DISTANCE;
+            const midX = (diagX1 + diagX2) / 2, midY = (diagY1 + diagY2) / 2;
+            const split1X = midX - ux * CONFIG.diag.gapDistance;
+            const split1Y = midY - uy * CONFIG.diag.gapDistance;
+            const split2X = midX + ux * CONFIG.diag.gapDistance;
+            const split2Y = midY + uy * CONFIG.diag.gapDistance;
 
-            // Determine line caps
             const cap1 = (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'NORMAL') ? 'butt' :
                         (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'NORMAL') ? 'round' : 'butt';
             const cap2 = (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'NORMAL') ? 'butt' :
                         (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'REVERSE') ? 'round' :
                         (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'REVERSE') ? 'round' : 'butt';
 
-            // Draw diagonal segments
-            const line1 = createSVGElement('line');
-            setAttributes(line1, {
-                x1: diagX1, y1: diagY1,
-                x2: diagSplit1X2, y2: diagSplit1Y2,
-                stroke: getColor(state.tracks['DIAG']),
-                'stroke-width': CONFIG.TRACK_WIDTH,
-                'stroke-linecap': cap1
+            drawLine(diagX1, diagY1, split1X, split1Y, {
+                stroke: getColor(state.tracks['DIAG']), 'stroke-width': CONFIG.track.width, 'stroke-linecap': cap1
             });
-            svg.appendChild(line1);
-
-            const line2 = createSVGElement('line');
-            setAttributes(line2, {
-                x1: diagSplit2X1, y1: diagSplit2Y1,
-                x2: diagX2, y2: diagY2,
-                stroke: getColor(state.tracks['DIAG']),
-                'stroke-width': CONFIG.TRACK_WIDTH,
-                'stroke-linecap': cap2
+            drawLine(split2X, split2Y, diagX2, diagY2, {
+                stroke: getColor(state.tracks['DIAG']), 'stroke-width': CONFIG.track.width, 'stroke-linecap': cap2
             });
-            svg.appendChild(line2);
-        }
 
-        /**
-         * Draw switch overlays and indicators
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawSwitches(svg, layout) {
-            const { upperY, lowerY, vc, ab } = layout;
-
-            // 11A overlay
+            // Switch overlays
             if (state.switches['11A'] === 'NORMAL') {
-                const line = createSVGElement('line');
-                setAttributes(line, {
-                    x1: vc.switch11A.start - CONFIG.SWITCH_OVERLAP,
-                    y1: upperY,
-                    x2: vc.switch11A.end + CONFIG.SWITCH_OVERLAP,
-                    y2: upperY,
-                    stroke: getColor(state.tracks['VC_LEFT']),
-                    'stroke-width': CONFIG.TRACK_WIDTH,
-                    'stroke-linecap': 'butt'
+                drawLine(layout.vc.switch11A.start - CONFIG.switch.overlap, layout.upperY,
+                        layout.vc.switch11A.end + CONFIG.switch.overlap, layout.upperY, {
+                    stroke: getColor(state.tracks['VC_LEFT']), 'stroke-width': CONFIG.track.width, 'stroke-linecap': 'butt'
                 });
-                svg.appendChild(line);
+            }
+            if (state.switchStates['11A'] === 'broken' && state.power === 'on') {
+                const circle = drawCircle((layout.vc.switch11A.start + layout.vc.switch11A.end)/2, layout.upperY,
+                                         CONFIG.switch.indicatorRadius, {
+                    fill: 'none', stroke: COLORS.yellow, 'stroke-width': '2', cursor: 'pointer', class: 'broken-ring'
+                });
+                circle.onclick = () => toggleSwitchState('11A');
             }
 
-            // 11A broken indicator
-            drawSwitchIndicator(svg, '11A', (vc.switch11A.start + vc.switch11A.end) / 2, upperY);
-
-            // 11B overlay
             if (state.switches['11B'] === 'NORMAL') {
-                const line = createSVGElement('line');
-                setAttributes(line, {
-                    x1: ab.switch11B.start - CONFIG.SWITCH_OVERLAP,
-                    y1: lowerY,
-                    x2: ab.switch11B.end + CONFIG.SWITCH_OVERLAP,
-                    y2: lowerY,
-                    stroke: getColor(state.tracks['AB_LEFT']),
-                    'stroke-width': CONFIG.TRACK_WIDTH,
-                    'stroke-linecap': 'butt'
+                drawLine(layout.ab.switch11B.start - CONFIG.switch.overlap, layout.lowerY,
+                        layout.ab.switch11B.end + CONFIG.switch.overlap, layout.lowerY, {
+                    stroke: getColor(state.tracks['AB_LEFT']), 'stroke-width': CONFIG.track.width, 'stroke-linecap': 'butt'
                 });
-                svg.appendChild(line);
+            }
+            if (state.switchStates['11B'] === 'broken' && state.power === 'on') {
+                const circle = drawCircle((layout.ab.switch11B.start + layout.ab.switch11B.end)/2, layout.lowerY,
+                                         CONFIG.switch.indicatorRadius, {
+                    fill: 'none', stroke: COLORS.yellow, 'stroke-width': '2', cursor: 'pointer', class: 'broken-ring'
+                });
+                circle.onclick = () => toggleSwitchState('11B');
             }
 
-            // 11B broken indicator
-            drawSwitchIndicator(svg, '11B', (ab.switch11B.start + ab.switch11B.end) / 2, lowerY);
-        }
+            // Shunt symbols
+            SHUNT_SYMBOLS.forEach(s => drawShuntSymbol(s, layout));
 
-        /**
-         * Draw end labels (SELATAN / UTARA)
-         * @param {SVGElement} svg - SVG container
-         * @param {Object} layout - Track layout
-         */
-        function drawEndLabels(svg, layout) {
-            const { upperY, lowerY, startX, aa } = layout;
-            const middleY = (upperY + lowerY) / 2;
-
-            drawLabel(svg, startX - CONFIG.LABEL_END_OFFSET, middleY, 'SELATAN');
-            drawLabel(svg, aa.end + CONFIG.LABEL_END_OFFSET, middleY, 'UTARA');
-        }
-
-        /**
-         * Main track drawing function - orchestrates all drawing
-         */
-        function drawTrack() {
-            const svg = document.getElementById('trackSvg');
-            svg.innerHTML = '';
-
-            // Background
-            const bg = createSVGElement('rect');
-            setAttributes(bg, {
-                width: CONFIG.SVG_WIDTH,
-                height: CONFIG.SVG_HEIGHT,
-                fill: COLORS.BLACK
+            // Platforms
+            const platformTopY = layout.upperY + CONFIG.platform.yOffset;
+            const platformBottomY = layout.lowerY - CONFIG.platform.yOffset;
+            [
+                { x: layout.va.start + (layout.va.end - layout.va.start)/2 - CONFIG.platform.labelOffset, label: 'Platform B' },
+                { x: layout.vd.start + (layout.vd.end - layout.vd.start)/2 - CONFIG.platform.labelOffset, label: 'Platform A' }
+            ].forEach(p => {
+                drawRect(p.x, platformTopY, CONFIG.platform.width, platformBottomY - platformTopY, {
+                    fill: 'none', stroke: defaultColor(), 'stroke-width': '2'
+                });
+                drawText(p.x + CONFIG.platform.width/2, platformTopY + (platformBottomY - platformTopY)/2, p.label);
             });
-            svg.appendChild(bg);
 
-            // Calculate layout
-            const layout = calculateTrackLayout();
+            // Signals
+            SIGNALS.forEach(s => drawSignal(s, layout));
 
-            // Draw all components in order
-            drawUpperTrack(svg, layout);
-            drawLowerTrack(svg, layout);
-            drawGapLines(svg, layout);
-            drawTriangles(svg, layout);
-            drawDiagonal(svg, layout);
-            drawSwitches(svg, layout);
-            drawShuntSymbols(svg, layout);
-            drawPlatforms(svg, layout);
-            drawSignals(svg, layout);
-            drawEndLabels(svg, layout);
-        }
+            // End labels
+            drawText(layout.startX - CONFIG.label.endOffset, layout.middleY, 'SELATAN');
+            drawText(layout.aa.end + CONFIG.label.endOffset, layout.middleY, 'UTARA');
+        };
 
         // ════════════════════════════════════════════════════════════════
-        // 7. STATE MODIFICATION FUNCTIONS
+        // 10. STATE MANAGEMENT & CONTROLS
         // ════════════════════════════════════════════════════════════════
 
-        /**
-         * Toggle power state
-         */
-        function togglePower() {
+        const togglePower = () => {
             state.power = state.power === 'on' ? 'off' : 'on';
-            updatePowerUI();
+            updateUI();
             render();
-        }
+        };
 
-        /**
-         * Set mode (VDU/DOMINO)
-         * @param {string} newMode - New mode ('vdu' or 'domino')
-         */
-        function setMode(newMode) {
+        const setMode = (mode) => {
             if (state.power === 'off') return;
-            state.mode = newMode;
-            updateModeUI();
+            state.mode = mode;
+            updateUI();
             render();
-        }
+        };
 
-        /**
-         * Cycle track state
-         * @param {string} trackName - Track name
-         */
-        function cycleState(trackName) {
+        const cycleState = (trackName) => {
             if (state.power === 'off') return;
+            const order = ['magenta', 'white', 'green', 'red'];
+            const idx = order.indexOf(state.tracks[trackName]);
+            state.tracks[trackName] = order[(idx + 1) % order.length];
 
-            const stateOrder = ['magenta', 'white', 'green', 'red'];
-            const currentIndex = stateOrder.indexOf(state.tracks[trackName]);
-            state.tracks[trackName] = stateOrder[(currentIndex + 1) % stateOrder.length];
-
-            // Handle switch synchronization
             if (trackName === 'VC_LEFT' && state.switches['11A'] === 'NORMAL') {
                 state.tracks['VC_RIGHT'] = state.tracks['VC_LEFT'];
                 state.tracks['VC_11A'] = state.tracks['VC_LEFT'];
@@ -1374,295 +765,138 @@
                 state.tracks['AB_RIGHT'] = state.tracks['AB_LEFT'];
                 state.tracks['AB_11B'] = state.tracks['AB_LEFT'];
             }
-
             render();
-        }
+        };
 
-        /**
-         * Cycle signal state
-         * @param {string} signalName - Signal name
-         */
-        function cycleSignal(signalName) {
+        const cycleSignal = (name) => {
             if (state.power === 'off') return;
-
-            const stateOrder = ['off', 'green', 'red', 'broken'];
-            const currentIndex = stateOrder.indexOf(state.signals[signalName] || 'off');
-            state.signals[signalName] = stateOrder[(currentIndex + 1) % stateOrder.length];
-
+            const order = ['off', 'green', 'red', 'broken'];
+            const idx = order.indexOf(state.signals[name] || 'off');
+            state.signals[name] = order[(idx + 1) % order.length];
             render();
-        }
+        };
 
-        /**
-         * Cycle T5 signal state
-         */
-        function cycleSignalT5() {
-            cycleSignal('T5');
-        }
-
-        /**
-         * Cycle T3 signal state
-         */
-        function cycleSignalT3() {
-            cycleSignal('T3');
-        }
-
-        /**
-         * Cycle S6 signal state
-         */
-        function cycleSignalS6() {
-            cycleSignal('S6');
-        }
-
-        /**
-         * Toggle switch position
-         * @param {string} switchName - Switch name
-         */
-        function toggleSwitch(switchName) {
+        const toggleSwitch = (name) => {
             if (state.power === 'off') return;
-            state.switches[switchName] = state.switches[switchName] === 'NORMAL' ? 'REVERSE' : 'NORMAL';
+            state.switches[name] = state.switches[name] === 'NORMAL' ? 'REVERSE' : 'NORMAL';
             render();
-        }
+        };
 
-        /**
-         * Toggle switch state (OK/broken)
-         * @param {string} switchName - Switch name
-         */
-        function toggleSwitchState(switchName) {
+        const toggleSwitchState = (name) => {
             if (state.power === 'off') return;
-            state.switchStates[switchName] = state.switchStates[switchName] === 'OK' ? 'broken' : 'OK';
+            state.switchStates[name] = state.switchStates[name] === 'OK' ? 'broken' : 'OK';
             render();
-        }
+        };
 
-        /**
-         * Toggle hood state
-         * @param {string} hoodName - Hood name
-         */
-        function toggleHood(hoodName) {
+        const toggleHood = (name) => {
             if (state.power === 'off') return;
-            state.hoods[hoodName] = state.hoods[hoodName] === 'empty' ? 'filled' : 'empty';
+            state.hoods[name] = state.hoods[name] === 'empty' ? 'filled' : 'empty';
             render();
-        }
+        };
 
-        /**
-         * Update power UI
-         */
-        function updatePowerUI() {
+        const updateUI = () => {
             const powerBtn = document.getElementById('powerBtn');
             const statusDiv = document.getElementById('systemStatus');
-
-            if (state.power === 'on') {
-                powerBtn.textContent = 'ON';
-                powerBtn.className = 'power-button on';
-                statusDiv.textContent = `SYSTEM: READY (${state.mode.toUpperCase()})`;
-                statusDiv.className = 'system-status';
-            } else {
-                powerBtn.textContent = 'OFF';
-                powerBtn.className = 'power-button off';
-                statusDiv.textContent = 'SYSTEM: OFFLINE';
-                statusDiv.className = 'system-status off';
-            }
-        }
-
-        /**
-         * Update mode UI
-         */
-        function updateModeUI() {
             const vduBtn = document.getElementById('vduBtn');
             const dominoBtn = document.getElementById('dominoBtn');
 
-            if (state.mode === 'vdu') {
-                vduBtn.className = 'active';
-                dominoBtn.className = 'inactive';
-            } else {
-                vduBtn.className = 'inactive';
-                dominoBtn.className = 'active';
-            }
-            updatePowerUI();
-        }
+            powerBtn.textContent = state.power.toUpperCase();
+            powerBtn.className = `power-button ${state.power}`;
+            statusDiv.textContent = state.power === 'on'
+                ? `SYSTEM: READY (${state.mode.toUpperCase()})`
+                : 'SYSTEM: OFFLINE';
+            statusDiv.className = `system-status ${state.power === 'off' ? 'off' : ''}`;
 
-        // ════════════════════════════════════════════════════════════════
-        // 8. CONTROL PANEL UI BUILDER
-        // ════════════════════════════════════════════════════════════════
+            vduBtn.className = state.mode === 'vdu' ? 'active' : 'inactive';
+            dominoBtn.className = state.mode === 'domino' ? 'active' : 'inactive';
+        };
 
-        /**
-         * Create control button
-         * @param {string} text - Button text
-         * @param {boolean} active - Is active
-         * @param {Function} onClick - Click handler
-         * @returns {HTMLElement} Button element
-         */
-        function createControlButton(text, active, onClick) {
-            const btn = document.createElement('button');
-            btn.textContent = text;
-            btn.className = active ? 'active' : '';
-            btn.onclick = onClick;
-            return btn;
-        }
-
-        /**
-         * Create track control item
-         * @param {string} name - Track name
-         * @param {string} state - Current state
-         * @param {Function} onClick - Click handler
-         * @returns {HTMLElement} Track item element
-         */
-        function createTrackItem(name, state, onClick) {
-            const div = document.createElement('div');
-            div.className = 'track-item';
-
-            const label = document.createElement('div');
-            label.className = 'track-name';
-            label.textContent = name.replace(/_/g, ' ');
-
-            const btn = document.createElement('button');
-            btn.className = `track-btn ${state}`;
-            btn.textContent = state.toUpperCase();
-            btn.onclick = onClick;
-
-            div.appendChild(label);
-            div.appendChild(btn);
-            return div;
-        }
-
-        /**
-         * Create switch control item
-         * @param {string} name - Switch name
-         * @returns {HTMLElement} Switch item element
-         */
-        function createSwitchItem(name) {
-            const div = document.createElement('div');
-            div.className = 'track-item';
-
-            const label = document.createElement('div');
-            label.className = 'track-name';
-            label.textContent = name;
-
-            // Position buttons
-            const btnGroup = document.createElement('div');
-            btnGroup.className = 'btn-group';
-            btnGroup.appendChild(createControlButton('NORMAL', state.switches[name] === 'NORMAL', () => toggleSwitch(name)));
-            btnGroup.appendChild(createControlButton('REVERSE', state.switches[name] === 'REVERSE', () => toggleSwitch(name)));
-
-            // State buttons
-            const stateGroup = document.createElement('div');
-            stateGroup.className = 'btn-group';
-            stateGroup.appendChild(createControlButton('OK', state.switchStates[name] === 'OK', () => toggleSwitchState(name)));
-            stateGroup.appendChild(createControlButton('BROKEN', state.switchStates[name] === 'broken', () => toggleSwitchState(name)));
-
-            div.appendChild(label);
-            div.appendChild(btnGroup);
-            div.appendChild(stateGroup);
-            return div;
-        }
-
-        /**
-         * Create hood control item
-         * @param {string} name - Hood name
-         * @returns {HTMLElement} Hood item element
-         */
-        function createHoodItem(name) {
-            const div = document.createElement('div');
-            div.className = 'track-item';
-
-            const label = document.createElement('div');
-            label.className = 'track-name';
-            label.textContent = `${name} Hood`;
-
-            const btnGroup = document.createElement('div');
-            btnGroup.className = 'btn-group';
-            btnGroup.appendChild(createControlButton('EMPTY', state.hoods[name] === 'empty', () => { if (state.hoods[name] !== 'empty') toggleHood(name); }));
-            btnGroup.appendChild(createControlButton('FILLED', state.hoods[name] === 'filled', () => { if (state.hoods[name] !== 'filled') toggleHood(name); }));
-
-            div.appendChild(label);
-            div.appendChild(btnGroup);
-            return div;
-        }
-
-        /**
-         * Create section title
-         * @param {string} title - Title text
-         * @returns {HTMLElement} Title element
-         */
-        function createSectionTitle(title) {
-            const div = document.createElement('div');
-            div.className = 'section-title';
-            div.textContent = title;
-            return div;
-        }
-
-        /**
-         * Update control panel
-         */
-        function updateControls() {
+        const updateControls = () => {
             const container = document.getElementById('trackControls');
             container.innerHTML = '';
 
-            // Switches
-            container.appendChild(createSectionTitle('POINT MACHINES'));
-            container.appendChild(createSwitchItem('11A'));
-            container.appendChild(createSwitchItem('11B'));
+            CONTROL_SECTIONS.forEach(section => {
+                const title = document.createElement('div');
+                title.className = 'section-title';
+                title.textContent = section.title;
+                container.appendChild(title);
 
-            // Signals
-            container.appendChild(createSectionTitle('SIGNALS'));
-            ['N4', 'T7', 'S6', 'T5', 'T3'].forEach(signalName => {
-                const cycleHandler = signalName === 'N4' || signalName === 'T7' ? () => cycleSignal(signalName) :
-                                    signalName === 'S6' ? cycleSignalS6 :
-                                    signalName === 'T5' ? cycleSignalT5 : cycleSignalT3;
-                container.appendChild(createTrackItem(signalName, state.signals[signalName], cycleHandler));
+                section.items.forEach(item => {
+                    if (section.type === 'track' &&
+                        ((item === 'VC_11A' && state.switches['11A'] === 'NORMAL') ||
+                         (item === 'AB_11B' && state.switches['11B'] === 'NORMAL'))) return;
+
+                    const div = document.createElement('div');
+                    div.className = 'track-item';
+
+                    const label = document.createElement('div');
+                    label.className = 'track-name';
+                    label.textContent = item.replace(/_/g, ' ') + (section.type === 'hood' ? ' Hood' : '');
+                    div.appendChild(label);
+
+                    if (section.type === 'switch') {
+                        ['NORMAL', 'REVERSE'].forEach(pos => {
+                            const btn = document.createElement('button');
+                            btn.textContent = pos;
+                            btn.className = state.switches[item] === pos ? 'active' : '';
+                            btn.onclick = () => toggleSwitch(item);
+                            if (!div.querySelector('.btn-group')) {
+                                const group = document.createElement('div');
+                                group.className = 'btn-group';
+                                div.appendChild(group);
+                            }
+                            div.querySelector('.btn-group').appendChild(btn);
+                        });
+                        ['OK', 'BROKEN'].forEach(st => {
+                            const btn = document.createElement('button');
+                            btn.textContent = st;
+                            btn.className = state.switchStates[item] === (st === 'OK' ? 'OK' : 'broken') ? 'active' : '';
+                            btn.onclick = () => toggleSwitchState(item);
+                            if (div.querySelectorAll('.btn-group').length < 2) {
+                                const group = document.createElement('div');
+                                group.className = 'btn-group';
+                                div.appendChild(group);
+                            }
+                            div.querySelectorAll('.btn-group')[1].appendChild(btn);
+                        });
+                    } else if (section.type === 'hood') {
+                        ['EMPTY', 'FILLED'].forEach(st => {
+                            const btn = document.createElement('button');
+                            btn.textContent = st;
+                            btn.className = state.hoods[item] === st.toLowerCase() ? 'active' : '';
+                            btn.onclick = () => { if (state.hoods[item] !== st.toLowerCase()) toggleHood(item); };
+                            if (!div.querySelector('.btn-group')) {
+                                const group = document.createElement('div');
+                                group.className = 'btn-group';
+                                div.appendChild(group);
+                            }
+                            div.querySelector('.btn-group').appendChild(btn);
+                        });
+                    } else {
+                        const btn = document.createElement('button');
+                        const value = section.type === 'signal' ? state.signals[item] : state.tracks[item];
+                        btn.className = `track-btn ${value}`;
+                        btn.textContent = value.toUpperCase();
+                        btn.onclick = section.type === 'signal' ? () => cycleSignal(item) : () => cycleState(item);
+                        div.appendChild(btn);
+                    }
+
+                    container.appendChild(div);
+                });
             });
+        };
 
-            // Hoods
-            container.appendChild(createSectionTitle('HOODS'));
-            ['T5', 'S6', 'T3'].forEach(hoodName => {
-                container.appendChild(createHoodItem(hoodName));
-            });
-
-            // Track sections
-            container.appendChild(createSectionTitle('TRACK SECTIONS'));
-            ['VA', 'VB', 'VC_LEFT', 'VC_11A', 'VC_RIGHT', 'VD'].forEach(trackName => {
-                if (trackName === 'VC_11A' && state.switches['11A'] === 'NORMAL') return;
-                container.appendChild(createTrackItem(trackName, state.tracks[trackName], () => cycleState(trackName)));
-            });
-
-            ['AD', 'AC', 'AB_LEFT', 'AB_11B', 'AB_RIGHT', 'AA'].forEach(trackName => {
-                if (trackName === 'AB_11B' && state.switches['11B'] === 'NORMAL') return;
-                container.appendChild(createTrackItem(trackName, state.tracks[trackName], () => cycleState(trackName)));
-            });
-
-            container.appendChild(createTrackItem('DIAG', state.tracks['DIAG'], () => cycleState('DIAG')));
-        }
-
-        // ════════════════════════════════════════════════════════════════
-        // 9. MAIN RENDER & INITIALIZATION
-        // ════════════════════════════════════════════════════════════════
-
-        /**
-         * Main render function
-         */
-        function render() {
+        const render = () => {
             drawTrack();
             updateControls();
+            document.querySelector('.controls').classList.toggle('disabled', state.power === 'off');
+        };
 
-            const controlsDiv = document.querySelector('.controls');
-            if (state.power === 'off') {
-                controlsDiv.classList.add('disabled');
-            } else {
-                controlsDiv.classList.remove('disabled');
-            }
-        }
-
-        /**
-         * Initialize event listeners
-         */
-        function initializeEventListeners() {
-            document.getElementById('powerBtn').addEventListener('click', togglePower);
-            document.getElementById('vduBtn').addEventListener('click', () => setMode('vdu'));
-            document.getElementById('dominoBtn').addEventListener('click', () => setMode('domino'));
-        }
-
-        // Initialize application
+        // Initialize
+        document.getElementById('powerBtn').addEventListener('click', togglePower);
+        document.getElementById('vduBtn').addEventListener('click', () => setMode('vdu'));
+        document.getElementById('dominoBtn').addEventListener('click', () => setMode('domino'));
         render();
-        initializeEventListeners();
     </script>
 </body>
 </html>
