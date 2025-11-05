@@ -476,16 +476,16 @@
                 poleX = layout.vaVb1X + (CONFIG.triangle.offset - CONFIG.triangle.size) + CONFIG.gap.width;
                 lampX = poleX + CONFIG.signal.armLength;
             } else if (position === 'after-AD') {
-                // T7: Align with left border of vertical line between AD-AC
-                poleX = layout.ad.end;
+                // T7: Align with left border of vertical line between AD-AC (where T7 triangle is)
+                poleX = layout.ad.end + CONFIG.triangle.size;
                 lampX = poleX - CONFIG.signal.armLength;
             } else if (position === 'between-AC-AB') {
                 poleX = layout.vb.end + CONFIG.gap.width + (layout.ab.start - (layout.vb.end + CONFIG.gap.width)) / 2;
                 lampX = poleX;
                 // S6: Set lampY to pole center (will be calculated below)
             } else if (position === 'after-AB') {
-                // T5: Align with left border of vertical line between AB-AA
-                poleX = layout.ab.end;
+                // T5: Align with left border of vertical line between AB-AA (third gap position)
+                poleX = layout.vcVd1X + (CONFIG.triangle.offset - CONFIG.triangle.size);
                 const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             } else if (position === 'after-VC') {
