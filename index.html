@@ -480,7 +480,7 @@
             } else if (position === 'between-AC-AB') {
                 poleX = layout.vb.end + CONFIG.gap.width + (layout.ab.start - (layout.vb.end + CONFIG.gap.width)) / 2;
                 lampX = poleX;
-                // S6: arm and hood at pole center, no offset
+                // S6: Set lampY to pole center (will be calculated below)
             } else if (position === 'after-AB') {
                 poleX = layout.ab.rightEnd + 32;
                 const radiusX = CONFIG.signal.poleHeight * CONFIG.signal.hoodRadiusMultiplier;
@@ -491,17 +491,13 @@
                 lampX = poleX - CONFIG.signal.hoodArmLength - radiusX - CONFIG.signal.lampRadius;
             }
 
-            // Calculate pole positions based on track (upper poles go down, lower poles go up)
-            const poleStartY = track === 'upper' ? y + yOffset : y - yOffset - CONFIG.signal.poleHeight;
-            const poleEndY = track === 'upper' ? y + yOffset + CONFIG.signal.poleHeight : y - yOffset;
-            const poleMidY = (poleStartY + poleEndY) / 2;
-
-            if (!lampY) lampY = poleMidY;
+            // Standard pole positioning (all poles extend downward from track)
+            if (!lampY) lampY = y + yOffset + CONFIG.signal.poleHeight / 2;
             labelX = poleX + (labelSide === 'right' ? CONFIG.label.signalOffset : -CONFIG.label.signalOffset);
-            labelY = (position === 'between-AC-AB' ? lampY : poleMidY) + CONFIG.label.signalYOffset;
+            labelY = lampY + CONFIG.label.signalYOffset;
 
             // Pole
-            drawLine(poleX, poleStartY, poleX, poleEndY, {
+            drawLine(poleX, y + yOffset, poleX, y + yOffset + CONFIG.signal.poleHeight, {
                 stroke: defaultColor(), 'stroke-width': CONFIG.signal.poleWidth
             });
 
@@ -641,10 +637,7 @@
             });
 
             // Diagonal
-            // When 11A is REVERSE, connect to END of VC_RIGHT; when NORMAL, connect to START with shortening
-            let diagX1 = state.switches['11A'] === 'REVERSE' ?
-                layout.vc.rightEnd + CONFIG.diag.offset :
-                layout.vc.rightStart - CONFIG.diag.offset;
+            let diagX1 = layout.vc.rightStart - CONFIG.diag.offset;
             let diagY1 = layout.upperY;
             let diagX2 = layout.ab.leftEnd + CONFIG.diag.offset;
             let diagY2 = layout.lowerY;
@@ -668,8 +661,7 @@
             const split2X = midX + ux * CONFIG.diag.gapDistance;
             const split2Y = midY + uy * CONFIG.diag.gapDistance;
 
-            const cap1 = (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'NORMAL') ? 'butt' :
-                        (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'NORMAL') ? 'round' : 'butt';
+            const cap1 = state.switches['11A'] === 'REVERSE' ? 'round' : 'butt';
             const cap2 = (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'NORMAL') ? 'butt' :
                         (state.switches['11A'] === 'NORMAL' && state.switches['11B'] === 'REVERSE') ? 'round' :
                         (state.switches['11A'] === 'REVERSE' && state.switches['11B'] === 'REVERSE') ? 'round' : 'butt';
